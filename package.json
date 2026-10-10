@@ -1,0 +1,24 @@
+{
+  "name": "c-cim",
+  "version": "0.49.2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "e2e": "node e2e/smoke.mjs && node e2e/roads.mjs && node e2e/zoning.mjs && node e2e/economy.mjs && node e2e/infrastructure.mjs && node e2e/saveload.mjs && node e2e/services.mjs && node e2e/traffic.mjs && node e2e/environment.mjs && node e2e/roadtypes.mjs && node e2e/tutorial.mjs && node e2e/graphics.mjs && node e2e/density.mjs && node e2e/weather.mjs && node e2e/schools.mjs && node e2e/green.mjs && node e2e/garbage.mjs && node e2e/renewables.mjs && node e2e/lots.mjs && node e2e/devmode.mjs && node e2e/landmap.mjs && node e2e/districts.mjs && node e2e/keys.mjs && node e2e/graphicsmenu.mjs && node e2e/mobile.mjs"
+  },
+  "dependencies": {
+    "@types/three": "^0.186.0",
+    "three": "^0.186.1"
+  },
+  "devDependencies": {
+    "playwright-core": "^1.63.0",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.2",
+    "vitest": "^5.0.3"
+  }
+}

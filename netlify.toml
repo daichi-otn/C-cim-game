@@ -1,0 +1,7 @@
+# Netlify の設定: ビルドして、dist を公開する (サーバーのいらない静的なサイト)
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
