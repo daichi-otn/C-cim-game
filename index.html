@@ -153,8 +153,10 @@
         #zone-palette button, #facility-palette button, #loop-palette button { font-size: 11px; padding: 3px 6px; }
         #tip { max-width: calc(100vw - 24px); font-size: 13px; }
         .sheet { width: calc(100vw - 24px) !important; max-width: none !important; }
+        .row-end { flex-wrap: wrap; }
+        .row-end .btn { flex: 1 1 42%; white-space: nowrap; }
       }
-      @media (pointer: coarse) { #toolbar kbd { display: none; } #panel .sub { display: none; } #panel .row:first-child { justify-content: flex-start; } }
+      @media (pointer: coarse) { #toolbar kbd, #menu-button kbd { display: none; } #panel .sub { display: none; } #panel .row:first-child { justify-content: flex-start; } }
     </style>
   </head>
   <body>

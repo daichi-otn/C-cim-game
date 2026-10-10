@@ -32,7 +32,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.49.2";
+const VERSION = "0.49.3";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -187,6 +187,8 @@ async function main() {
   let showEnv = false;
 
   const hud = $("hud");
+  // 画面左上の開発者向けの表示 (座標・ズーム・数など) は、公開版では隠す。?debug=1 で出せる (テストは、見えなくても文字を読む)
+  if (!params.has("debug") && !params.has("dev")) hud.style.display = "none";
   const tip = $("tip");
   const toast = $("toast");
   const titleEl = $("title");
@@ -544,7 +546,9 @@ async function main() {
     body.textContent = "";
     for (const para of s.body) {
       const p = document.createElement("p");
-      p.textContent = resolveKeyTokens(para, keymap);
+      const text = resolveKeyTokens(para, keymap);
+      // タッチの端末には、キーの案内 ((キー 2) など) は要らない
+      p.textContent = matchMedia("(pointer: coarse)").matches ? text.replace(/\(キー [^)]*\)/g, "") : text;
       body.append(p);
     }
     $("tut-done").classList.toggle("hidden", !t.satisfied);
@@ -752,10 +756,12 @@ async function main() {
     graphicsBox.textContent = "";
     for (const k of Object.keys(DEFAULT_GRAPHICS) as GraphicsKey[]) {
       const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;justify-content:space-between;gap:8px;margin:6px 0;color:#d4dae2;font-size:14px";
+      row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 8px;margin:8px 0;color:#d4dae2;font-size:14px";
       const name = document.createElement("span");
       name.textContent = GRAPHICS_LABELS[k];
+      name.style.cssText = "flex:1 1 110px";
       const btns = document.createElement("span");
+      btns.style.cssText = "display:flex;flex-wrap:wrap;gap:4px";
       GRAPHICS_LEVEL_NAMES.forEach((text, i) => {
         const b = document.createElement("button");
         b.className = "btn";
