@@ -83,3 +83,38 @@ export function yieldsTo(myDist: number, mySeed: number, otherDist: number, othe
   return otherDist < myDist || (otherDist === myDist && otherSeed < mySeed);
 }
 
+/** 車の長さ (前後の幅、タイル)。 */
+export const CAR_LEN = 0.3;
+/** 車線の中心から、車の中心までの横のずれ (タイル)。対向車線は、その 2 倍ずれる。 */
+export const LANE_OFFSET = 0.14;
+
+/**
+ * 同じ車線で前にいる車との車間 (タイル、車の前後の長さを引いたもの)。前にいなければ null。
+ * (mx,my) は自分の車線の位置、h は自分の向き、(ox,oy) は相手の車線の位置。look より先は見ない。
+ */
+export function aheadGap(mx: number, my: number, h: number, ox: number, oy: number, look: number): number | null {
+  const fx = Math.cos(h);
+  const fy = Math.sin(h);
+  const rx = ox - mx;
+  const ry = oy - my;
+  const along = rx * fx + ry * fy;
+  const lateral = Math.abs(-rx * fy + ry * fx);
+  // 対向車線は、横に 2 倍の距離 (0.28) ずれているので、数えない。曲がり角のずれも許すように、少し広く見る
+  if (along <= 0 || along > look || lateral > 0.2) return null;
+  return along - CAR_LEN;
+}
+
+/** 同じ車線で、車どうしが重なっているか (前後の長さの中に、相手の中心がある)。 */
+export function overlapsInLane(mx: number, my: number, h: number, ox: number, oy: number): boolean {
+  const fx = Math.cos(h);
+  const fy = Math.sin(h);
+  const rx = ox - mx;
+  const ry = oy - my;
+  return Math.abs(rx * fx + ry * fy) < CAR_LEN && Math.abs(-rx * fy + ry * fx) <= 0.1;
+}
+
+/** 車線の上の、車の中心の位置 (タイル)。(ax,ay) は道路の中心線の上の点、h は車線の向き。左側を走る。 */
+export function lanePoint(ax: number, ay: number, h: number): { x: number; y: number } {
+  return { x: ax + Math.sin(h) * LANE_OFFSET, y: ay - Math.cos(h) * LANE_OFFSET };
+}
+

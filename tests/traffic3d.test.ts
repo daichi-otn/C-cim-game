@@ -1,20 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { RoadType } from "../src/sim/roadTypes";
 import { Traffic3D } from "../src/render3d/traffic3d";
-import { projectOnSegment } from "../src/render3d/carMotion";
+import { lanePoint, projectOnSegment } from "../src/render3d/carMotion";
 import type { Roads3D } from "../src/render3d/roads3d";
 import { setup } from "./helpers";
 
 /** 車の描画だけを見る。道路の高さは 0 として扱う。 */
 const flatRoads = { heightOnEdge: () => 0 } as unknown as Roads3D;
-type Internal = { cars: { edge: number; ax: number; ay: number }[] };
+type Internal = { cars: { edge: number; ax: number; ay: number; heading: number }[] };
+/** 車の中心の位置 (車線の上)。Traffic3D が描く位置と同じ。 */
+const lanes = (t: Traffic3D) => (t as unknown as Internal).cars.map((c) => lanePoint(c.ax, c.ay, (t as any).laneHeading(c)));
+
+/** 交差点 (十字) がある街と、車を走らせる Traffic3D を作る。 */
+function crossingCity() {
+  const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, false);
+  const traffic = new Traffic3D(city, flatRoads);
+  traffic.setCarScale(1);
+  return { city, x0, roadY, traffic };
+}
 
 describe("交差点での車", () => {
   it("道路が交差点で分割されても、車は消えず、いまの道路の上に残る", () => {
-    const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, false);
-    const traffic = new Traffic3D(city, flatRoads);
-    traffic.setCarScale(1);
-    city.traffic.flow.clear();
+    const { city, x0, roadY, traffic } = crossingCity();
     for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
     city.trafficVersion++;
     traffic.update(0.1, 0);
@@ -36,5 +43,24 @@ describe("交差点での車", () => {
       // 車の位置は、いまの道路の線の上にある
       expect(projectOnSegment(c.ax, c.ay, a.x, a.y, b.x, b.y).dist).toBeLessThan(0.01);
     }
+  });
+
+  it("車が走り続けても、車同士が重ならない (車線の上の中心どうしが近づきすぎない)", () => {
+    const { city, x0, roadY, traffic } = crossingCity();
+    city.buildRoad(x0 + 10.5, roadY - 4.5, x0 + 10.5, roadY + 5.5, RoadType.Street);
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
+    city.trafficVersion++;
+    traffic.update(0, 0);
+    // 走り出して、交差点で譲り合う様子を見る (最初の 20 秒は数えない)
+    for (let i = 0; i < 400; i++) traffic.update(0.05, 0);
+    let worst = Infinity;
+    for (let i = 0; i < 1200; i++) {
+      traffic.update(0.05, 0);
+      const pts = lanes(traffic);
+      for (let a = 0; a < pts.length; a++)
+        for (let b = a + 1; b < pts.length; b++) worst = Math.min(worst, Math.hypot(pts[a]!.x - pts[b]!.x, pts[a]!.y - pts[b]!.y));
+    }
+    // 車の長さは 0.3 タイル。0.2 タイルより近づかないこと
+    expect(worst).toBeGreaterThan(0.2);
   });
 });

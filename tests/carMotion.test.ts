@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAR, idmAccel, nearestSegment, projectOnSegment, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "../src/render3d/carMotion";
+import { CAR, aheadGap, idmAccel, LANE_OFFSET, nearestSegment, overlapsInLane, projectOnSegment, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "../src/render3d/carMotion";
 
 describe("車の加速と減速", () => {
   it("空いている道では、目標の速さまで加速し、そこで止まる", () => {
@@ -68,5 +68,26 @@ describe("交差点で譲る", () => {
   it("距離が同じときは番号の小さい方が先で、互いに譲り合わない", () => {
     expect(yieldsTo(1, 7, 1, 3)).toBe(true);
     expect(yieldsTo(1, 3, 1, 7)).toBe(false);
+  });
+});
+
+describe("同じ車線で前の車との車間", () => {
+  it("まっすぐ前にいる車との車間を、車の長さを引いて返す", () => {
+    expect(aheadGap(0, 0, 0, 2, 0, 5)).toBeCloseTo(2 - 0.3, 9);
+  });
+  it("後ろの車や、見えない先の車は数えない", () => {
+    expect(aheadGap(0, 0, 0, -2, 0, 5)).toBeNull();
+    expect(aheadGap(0, 0, 0, 9, 0, 5)).toBeNull();
+  });
+  it("反対の車線の車は、横にずれているので数えない", () => {
+    expect(aheadGap(0, 0, 0, 2, 2 * LANE_OFFSET, 5)).toBeNull();
+  });
+});
+
+describe("重なった車", () => {
+  it("同じ車線で、車の長さの中にあれば重なっている。隣の車線なら重なっていない", () => {
+    expect(overlapsInLane(0, 0, 0, 0.1, 0)).toBe(true);
+    expect(overlapsInLane(0, 0, 0, 0.5, 0)).toBe(false);
+    expect(overlapsInLane(0, 0, 0, 0.1, 2 * LANE_OFFSET)).toBe(false);
   });
 });
