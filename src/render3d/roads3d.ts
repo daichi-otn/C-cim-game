@@ -14,6 +14,8 @@ const GAP = 4.5;
 /** 横断歩道を描く、交差点からの距離 (px) と縞の数。 */
 const CROSSWALK_DIST = TILE * 0.62;
 const CROSSWALK_STRIPES = 4;
+/** 横断歩道から、止まる線までの距離 (px)。信号のある交差点の、道の入口に引く。 */
+const STOP_LINE_GAP = 3.5;
 /** 橋の桁の高さ (路面)・桁の厚み・橋脚の間隔。 */
 export const BRIDGE_Y = 2.6;
 const DECK_THICK = 1.5;
@@ -486,6 +488,12 @@ export class Roads3D {
         for (let i = 0; i < CROSSWALK_STRIPES; i++) {
           const o = -half + step * (i + 0.5);
           ribbon(g, px + nx * o - ux * 1.4, pz + nz * o - uz * 1.4, Y_MARK + 0.04, px + nx * o + ux * 1.4, pz + nz * o + uz * 1.4, Y_MARK + 0.04, 1.8, 0xf2f2ee);
+        }
+        // 信号のある交差点: 横断歩道の手前に、止まる線 (白い太い線)
+        if (sg.len > (CROSSWALK_DIST + STOP_LINE_GAP) * 2) {
+          const sx = node.x * TILE + ux * dir * (CROSSWALK_DIST + STOP_LINE_GAP);
+          const sz = node.y * TILE + uz * dir * (CROSSWALK_DIST + STOP_LINE_GAP);
+          ribbon(g, sx + nx * -half, sz + nz * -half, Y_MARK + 0.05, sx + nx * half, sz + nz * half, Y_MARK + 0.05, 1.2, 0xf2f2ee);
         }
       }
     }

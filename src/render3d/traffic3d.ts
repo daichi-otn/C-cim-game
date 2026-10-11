@@ -11,6 +11,7 @@ import { TILE } from "./terrain3d";
 import type { ZoneCell } from "../sim/zoning";
 import { ZoneType } from "../sim/zoning";
 import { falloff } from "../audio/soundMath";
+import { buildSignalPlan, lightOf, type SignalPlan } from "../sim/signals";
 import { lotCenter } from "../sim/zoning";
 
 /** 1 本の道路に同時に走らせる車の数の上限と、交通量 (台/日) あたりの台数。 */
@@ -180,6 +181,11 @@ export class Traffic3D {
   private drawnKey = "";
   /** 交差点ごとに、今通り抜けている車 (一度に 1 台)。 */
   private nodeHolder = new Map<number, Car>();
+  /** 信号の計画 (道路が変わったときだけ作り直す)。 */
+  private plan: SignalPlan = new Map();
+  private planVersion = -1;
+  /** 信号の時間 (秒)。ゲームの時間で進む (一時停止中は止まる)。 */
+  clock = 0;
   private destKey = "";
   /** 住宅の前の交差点と、職場の前の交差点。 */
   private homeNodes: number[] = [];
@@ -226,6 +232,11 @@ export class Traffic3D {
   update(simDt: number, night: number): void {
     const { city } = this;
     const graph = city.graph;
+    this.clock += simDt;
+    if (graph.version !== this.planVersion) {
+      this.planVersion = graph.version;
+      this.plan = buildSignalPlan(graph);
+    }
     const destKey = `${city.zones.version}:${graph.version}`;
     if (destKey !== this.destKey) {
       this.destKey = destKey;
@@ -354,7 +365,8 @@ export class Traffic3D {
       if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.4);
     }
     // 交差点: 先に着く車がいるなら、手前で止まって譲る (車が交差点の中で重ならないように)
-    if (distToEnd < 3 && distToEnd > 0.5 && (this.mustYield(car, distToEnd) || this.junctionHeld(car))) vTarget = Math.min(vTarget, stopSpeed(distToEnd - 0.4) + 0.05);
+    if (distToEnd < 3 && distToEnd > 0.5 && (this.mustYield(car, distToEnd) || this.junctionHeld(car) || this.mustSignalStop(car, distToEnd)))
+      vTarget = Math.min(vTarget, stopSpeed(distToEnd - 0.4) + 0.05);
     // 前の車との間隔
     const leader = this.leaderOf(car);
     const accel = idmAccel(car.speed, vTarget, leader?.gap ?? null, leader?.speed ?? 0);
@@ -510,6 +522,16 @@ export class Traffic3D {
     const b = this.city.graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     return this.cars.some((o) => o !== car && o.edge === car.edge && o.dir === dir && Math.abs(o.p - car.p) * len < CAR_LEN + 0.1);
+  }
+
+  /** 信号: 赤なら止まる。黄色は、止まれるなら止まる (止まれないときは、そのまま通る)。 */
+  private mustSignalStop(car: Car, distToEnd: number): boolean {
+    const group = this.plan.get(this.endNode(car))?.get(car.edge);
+    if (group === undefined) return false;
+    const light = lightOf(group, this.clock);
+    if (light === "green") return false;
+    if (light === "red") return true;
+    return distToEnd > (car.speed * car.speed) / (2 * CAR.decel);
   }
 
   /** この車が向かう交差点を、ほかの車が通り抜けている。 */
