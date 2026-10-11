@@ -85,6 +85,15 @@ export class World3D {
     return this.scene.view;
   }
 
+  /** 音のために、聞く人の近くを走る車と、建設中の場所を調べる (タイル)。 */
+  soundTraffic(cx: number, cy: number) {
+    return this.traffic?.soundAt(cx, cy) ?? { weight: 0, x: cx, y: cy };
+  }
+
+  soundConstruction(cx: number, cy: number) {
+    return this.construction?.soundAt(cx, cy) ?? { sites: [], hand: { weight: 0, x: cx, y: cy }, crane: { weight: 0, x: cx, y: cy } };
+  }
+
   get chunkCount(): number {
     return this.terrain?.chunkCount ?? 0;
   }

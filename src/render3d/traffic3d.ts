@@ -10,6 +10,7 @@ import type { Roads3D } from "./roads3d";
 import { TILE } from "./terrain3d";
 import type { ZoneCell } from "../sim/zoning";
 import { ZoneType } from "../sim/zoning";
+import { falloff } from "../audio/soundMath";
 import { lotCenter } from "../sim/zoning";
 
 /** 1 本の道路に同時に走らせる車の数の上限と、交通量 (台/日) あたりの台数。 */
@@ -565,6 +566,23 @@ export class Traffic3D {
         if (n !== null) this.workNodes.push(n);
       }
     }
+  }
+
+  /** 聞く人 (タイル) の近くを走る車の、音の重み (距離と速さ) と、その重心。 */
+  soundAt(cx: number, cy: number): { weight: number; x: number; y: number } {
+    let w = 0;
+    let sx = 0;
+    let sy = 0;
+    for (const car of this.cars) {
+      if (car.dwell > 0 || car.speed < 0.05) continue; // 止まっている車は、音を立てない
+      const p = this.lanePos(car);
+      const f = falloff(Math.hypot(p.x - cx, p.y - cy)) * Math.min(1, car.speed / FREE_SPEED);
+      if (f <= 0) continue;
+      w += f;
+      sx += p.x * f;
+      sy += p.y * f;
+    }
+    return w > 0 ? { weight: w, x: sx / w, y: sy / w } : { weight: 0, x: cx, y: cy };
   }
 
   /** 交通量が変わったので、車の台数を合わせ直し、混雑の色を作り直す。 */

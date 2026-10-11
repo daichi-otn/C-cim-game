@@ -20,6 +20,8 @@ import { curvePoints, snapPoint } from "./sim/roadPlacement";
 import { STRUCTURE_SPECS, Structure, isLandPoint } from "./sim/structures";
 import { ZONE_COLORS } from "./render3d/colors";
 import { TILE as TILE_PX } from "./render3d/terrain3d";
+import { CITY_SONG, TITLE_SONG } from "./audio/music";
+import { residentsNear, Soundscape } from "./audio/soundscape";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, ROAD_TYPES, type RoadType } from "./sim/roadTypes";
 import {
   AUTO_SLOT,
@@ -33,7 +35,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.56.0";
+const VERSION = "0.57.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -186,6 +188,12 @@ async function main() {
   const store = new SaveStore(storage);
 
   let g: Game | null = null;
+  // 音: 最初の操作で、音の仕組みを作って BGM を流す (ブラウザは、操作されるまで音を出させない)
+  const soundscape = new Soundscape();
+  const unlockSound = () => soundscape.unlock();
+  document.addEventListener("pointerdown", unlockSound, { once: true, capture: true });
+  document.addEventListener("keydown", unlockSound, { once: true, capture: true });
+  soundscape.playSong(TITLE_SONG);
   /** T キーで切り替える、道路の混雑の色分け。街を作り直しても引き継ぐ。 */
   let showHeat = false;
   /** O キーで切り替える、住宅の環境 (大気汚染・騒音・悪臭) の色分け。 */
@@ -502,6 +510,7 @@ async function main() {
       camera.y = start.y * TILE_PX;
     }
     setTool("pan");
+    soundscape.playSong(CITY_SONG);
     startTutorial(!!o.tutorial);
     setSpeed((o.tutorial ? 0 : (o.saved?.speed ?? 1)) as Speed);
     speedBeforePause = speed === 0 ? 1 : speed;
@@ -858,6 +867,7 @@ async function main() {
 
   function openTitle() {
     if (g) autosave();
+    soundscape.playSong(TITLE_SONG);
     menuEl.classList.add("hidden");
     reportTitle("");
     renderSlots($("title-slots"), "title", reportTitle);
@@ -1685,6 +1695,16 @@ async function main() {
     }
   }
 
+  const soundBtn = $("menu-sound");
+  const showSoundState = () => (soundBtn.textContent = `音: ${soundscape.isEnabled ? "あり" : "なし"}`);
+  showSoundState();
+  soundBtn.addEventListener("click", () => {
+    soundscape.setEnabled(!soundscape.isEnabled);
+    showSoundState();
+  });
+  let nearResidents = 0;
+  let nearAt = -1000;
+
   let lastFrameAt = performance.now();
   const frame = () => {
     requestAnimationFrame(frame);
@@ -1724,6 +1744,23 @@ async function main() {
     updatePanel(city);
     updateTutorial(g);
     world.update(modalOpen() ? 0 : realDt, { simDt: modalOpen() ? 0 : realDt * speed, hour: dayClock.hour, lighting });
+    // 音: 聞く人 (カメラの中心) の近くの車・建設・住民で、音の大きさと左右を決める
+    const cxT = camera.x / TILE_PX;
+    const cyT = camera.y / TILE_PX;
+    if (nowMs - nearAt > 500) {
+      nearAt = nowMs;
+      nearResidents = residentsNear(zones.cells.values(), cxT, cyT);
+    }
+    const cons = world.soundConstruction(cxT, cyT);
+    soundscape.update({
+      center: { x: cxT, y: cyT },
+      right: camera.right,
+      traffic: world.soundTraffic(cxT, cyT),
+      hand: cons.hand,
+      crane: cons.crane,
+      residents: nearResidents,
+      sites: cons.sites,
+    });
     updateZonePreview(g);
     updateFacilityPreview(g);
     if (tipUntil && performance.now() > tipUntil && tool !== "pan") tipUntil = 0;

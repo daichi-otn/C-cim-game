@@ -5,6 +5,7 @@ import { addLot, type Parts } from "./buildingGeo";
 import { applyFacadeShader } from "./facadeShader";
 import { frontRotation } from "./orientation";
 import { GeoBuilder } from "./geo";
+import { falloff } from "../audio/soundMath";
 import { basePose, buildStyleOf, constructionSeconds, cranePose, planSites, workerPose } from "./constructionShape";
 
 /** 建設中の建物の 1 か所。本物と同じ形の建物を、地面から切り取り線まで見せる。 */
@@ -71,6 +72,24 @@ export class Construction3D {
     this.unit.translate(0, 0.5, 0); // 底が原点
     this.jibGeo.translate(0.5, 0, 0); // 腕は塔の上の点から外へ伸びる
     this.frontierMat.toneMapped = false;
+  }
+
+  /** 建設中の場所 (タイル)。クレーンか、手で積むかの別と、音の重み (近いほど大きい) と重心を、聞く人の位置から求める。 */
+  soundAt(cx: number, cy: number): { sites: { x: number; y: number }[]; hand: { weight: number; x: number; y: number }; crane: { weight: number; x: number; y: number } } {
+    const sites: { x: number; y: number }[] = [];
+    const hand = { weight: 0, x: cx, y: cy, sx: 0, sy: 0 };
+    const crane = { weight: 0, x: cx, y: cy, sx: 0, sy: 0 };
+    for (const [key, s] of this.sites) {
+      const [x, y] = key.split(",").map(Number) as [number, number];
+      sites.push({ x, y });
+      const f = falloff(Math.hypot(x + 0.5 - cx, y + 0.5 - cy));
+      const g = s.style === "crane" ? crane : hand;
+      g.weight += f;
+      g.sx += (x + 0.5) * f;
+      g.sy += (y + 0.5) * f;
+    }
+    const out = (g: typeof hand) => ({ weight: g.weight, x: g.weight > 0 ? g.sx / g.weight : cx, y: g.weight > 0 ? g.sy / g.weight : cy });
+    return { sites, hand: out(hand), crane: out(crane) };
   }
 
   /** この場所の建物を、今は描かない (建設中のため)。 */
