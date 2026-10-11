@@ -1,5 +1,5 @@
 import { CITY_SONG, midiHz, type Song } from "./music";
-import { chatterLevel, falloff, HEAR_RANGE, panOf, trafficLevel } from "./soundMath";
+import { chatterLevel, falloff, HEAR_RANGE, panOf, TRAFFIC_VOLUME, trafficLevel } from "./soundMath";
 
 /**
  * ゲームの音 (音声機能で作る。音声ファイルは使わない)。
@@ -98,7 +98,7 @@ export class Soundscape {
     const t = ctx.currentTime;
     const on = this.enabled ? 1 : 0;
     // 車の走行音
-    this.trafficV.gain.gain.setTargetAtTime(on * trafficLevel(f.traffic.weight) * 0.22, t, 0.15);
+    this.trafficV.gain.gain.setTargetAtTime(on * trafficLevel(f.traffic.weight) * TRAFFIC_VOLUME, t, 0.15);
     this.trafficV.pan.pan.setTargetAtTime(panOf(f.traffic.x - f.center.x, f.traffic.y - f.center.y, f.right), t, 0.15);
     // クレーン (ウインチの低い唸り)
     this.craneV.gain.gain.setTargetAtTime(on * Math.min(1, f.crane.weight) * 0.14, t, 0.2);
@@ -203,6 +203,7 @@ export class Soundscape {
   private scheduleBar(bar: Song["bars"][number], t: number, beat: number): void {
     const len = 4 * beat;
     if (this.song.news) return this.newsBar(bar, t, beat);
+    if (this.song.soft) return this.softBar(bar, t, beat);
     // 和音 (うすく伸ばす)
     for (const m of bar.chord) this.tone(midiHz(m), "triangle", t, len, 0.035, 0.08);
     // 低音 (1 拍目と 3 拍目)
@@ -213,6 +214,19 @@ export class Soundscape {
     let mt = t;
     for (const [m, b] of bar.melody) {
       this.tone(midiHz(m), this.song.radio ? "square" : "triangle", mt, b * beat, 0.05, 0.03);
+      mt += b * beat;
+    }
+  }
+
+  /** 落ち着いた曲風の 1 小節: 和音をゆっくり重ね、旋律はピアノのように、音が減衰しながら鳴る。 */
+  private softBar(bar: Song["bars"][number], t: number, beat: number): void {
+    const len = 4 * beat;
+    for (const m of bar.chord) this.tone(midiHz(m), "sine", t, len, 0.03, len * 0.5);
+    const root = midiHz(bar.chord[0]! - 12);
+    this.tone(root, "sine", t, len, 0.08, len * 0.5);
+    let mt = t;
+    for (const [m, b] of bar.melody) {
+      this.tone(midiHz(m), "sine", mt, b * beat * 1.2, 0.045, b * beat * 0.9);
       mt += b * beat;
     }
   }

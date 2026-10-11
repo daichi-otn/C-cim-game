@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { chatterLevel, falloff, HEAR_RANGE, panOf, trafficLevel } from "../src/audio/soundMath";
+import { chatterLevel, falloff, HEAR_RANGE, panOf, TRAFFIC_VOLUME, trafficLevel } from "../src/audio/soundMath";
 
 describe("音の大きさ (距離)", () => {
   it("近いほど大きく、範囲の外は 0", () => {
@@ -31,6 +31,7 @@ describe("にぎやかさ", () => {
     expect(chatterLevel(10000)).toBe(1);
     expect(trafficLevel(0)).toBe(0);
     expect(trafficLevel(1000)).toBe(1);
+    expect(TRAFFIC_VOLUME).toBeLessThanOrEqual(0.05);
   });
 });
 

@@ -27,6 +27,9 @@ export function chatterLevel(residents: number): number {
   return Math.min(1, residents / 120);
 }
 
+/** 車の走行音の最大の音量 (BGM より小さく、うるさくならない大きさ)。 */
+export const TRAFFIC_VOLUME = 0.05;
+
 /** 車の走行音の大きさ。近くを走る車の重み (距離×速さ) の合計を、0〜1 に収める。 */
 export function trafficLevel(weight: number): number {
   return Math.min(1, weight / 6);
