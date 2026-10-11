@@ -26,6 +26,8 @@ const CAR_COLORS = [0xe8e8ea, 0xd9564a, 0x4a90e2, 0xf2c230, 0x5ec27a, 0x8a8f98];
 const CAPACITY = 6000;
 /** 同じ車線で、車どうしの中心をこのくらい (タイル) 離して置く。 */
 const SPAWN_GAP = 0.4;
+/** これだけ止まり続けた車は、交差点の譲り合いと、U ターンの待ちを一時的に気にしない (秒)。 */
+const STALL_SEC = 20;
 /** 前の車を探す距離 (タイル)。 */
 const LEADER_LOOK = 2.5;
 
@@ -136,6 +138,8 @@ interface Car {
   claimNode: number;
   /** 運転の個性: 速さの好みと、前の車との間隔 (秒)。 */
   pace: number;
+  /** 止まり続けている時間 (秒)。長すぎると、交差点の譲り合いを一時的に気にしない (渋滞の固まりを解くため)。 */
+  stall: number;
   headway: number;
   /** 車の中心の位置 (タイル)。道路が作り替わったとき、いまの道路へ戻すために使う。 */
   ax: number;
@@ -332,23 +336,23 @@ export class Traffic3D {
     }
     // U ターン中: その場で向きを変えてから、逆向きに走り出す
     if (car.uturn >= 0) {
-      car.uturn += dt;
-      const target = car.heading + Math.PI;
-      car.heading = turnToward(car.heading, target, Math.PI / UTURN_SEC, dt);
       car.braking = false;
-      // 向きを変え終わっても、逆向きの車線に車がいれば、空くまで待つ (重ならないように)
-      if (car.uturn >= UTURN_SEC && this.laneBlocked(car, -car.dir)) {
-        car.uturn = UTURN_SEC;
+      // 回っている間だけ、向きを変える (回り切ったら、もう回らない。待つあいだに回り続けない)
+      if (car.uturn < UTURN_SEC) {
+        car.uturn += dt;
+        car.heading = turnToward(car.heading, car.heading + Math.PI, Math.PI / UTURN_SEC, dt);
+        return;
+      }
+      // 回り切った: 逆向きの車線に車がいれば、空くまで待つ (重ならないように)
+      if (this.laneBlocked(car, -car.dir)) {
         car.speed = 0;
         return;
       }
-      if (car.uturn >= UTURN_SEC) {
-        car.uturn = -1;
-        car.dir = -car.dir;
-        car.heading = wrapAngle(car.heading);
-        car.route = [];
-        this.planFrom(car, this.endNode(car));
-      }
+      car.uturn = -1;
+      car.dir = -car.dir;
+      car.heading = wrapAngle(car.heading);
+      car.route = [];
+      this.planFrom(car, this.endNode(car));
       return;
     }
     const e = graph.edges.get(car.edge);
@@ -356,9 +360,16 @@ export class Traffic3D {
     const a = graph.nodes.get(e.a)!;
     const b = graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    car.stall = car.speed < 0.02 ? car.stall + dt : 0;
     const ratio = edgeCongestion(graph, car.edge, this.city.traffic.flow.get(car.edge) ?? 0, this.city.traffic.capMult);
     let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
     const distToEnd = (car.dir > 0 ? 1 - car.p : car.p) * len;
+    // 道順がない車が、端のすぐ手前で止まり続けないように、端に着いたことにする (行き先か、U ターンか、を決める)
+    if (car.route.length === 0 && distToEnd <= 0.05) {
+      car.p = car.dir > 0 ? 1 : 0;
+      this.arrive(car);
+      return;
+    }
     // 行き先 (または行き止まり) の手前では、ぴたりと止まるように減速する
     if (car.route.length === 0) vTarget = Math.min(vTarget, stopSpeed(distToEnd) + 0.05);
     // 次の区間が大きく曲がるときは、交差点の手前で速さを落とす (カーブ)
@@ -368,7 +379,8 @@ export class Traffic3D {
       if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.4);
     }
     // 交差点: 先に着く車がいるなら、手前で止まって譲る (車が交差点の中で重ならないように)
-    if (distToEnd < 3 && distToEnd > 0.5 && (this.mustYield(car, distToEnd) || this.junctionHeld(car) || this.mustSignalStop(car, distToEnd)))
+    const patient = car.stall < STALL_SEC;
+    if (distToEnd < 3 && distToEnd > 0.5 && ((patient && (this.mustYield(car, distToEnd) || this.junctionHeld(car))) || this.mustSignalStop(car, distToEnd)))
       vTarget = Math.min(vTarget, stopSpeed(distToEnd - 0.4) + 0.05);
     // 前の車との間隔
     const leader = this.leaderOf(car);
@@ -472,6 +484,8 @@ export class Traffic3D {
           return;
         }
         car.dest = -1;
+        // 止まるときは、通り抜けていた交差点も手放す (止まった車が交差点を塞がないように)
+        if (car.claimNode >= 0 && this.nodeHolder.get(car.claimNode) === car) this.nodeHolder.delete(car.claimNode);
         if (this.nodeHolder.get(reached) === car) this.nodeHolder.delete(reached);
         car.claimNode = -1;
         car.dwell = DWELL_MIN + (DWELL_MAX - DWELL_MIN) * hash2(car.seed, reached, this.carSerial++);
@@ -489,9 +503,16 @@ export class Traffic3D {
       car.braking = false;
       return;
     }
+    // 行き止まりで引き返す道順 (同じ区間を逆に戻る): 交差点へ入らず、その場で U ターンする
+    if (car.route[0] && car.route[0].edge === car.edge) {
+      car.uturn = 0;
+      car.speed = 0;
+      car.braking = false;
+      return;
+    }
     // 交差点は一度に 1 台: ほかの車が通り抜けている交差点へは入らない
     const holder = this.nodeHolder.get(reached);
-    if (holder && holder !== car && this.cars.includes(holder)) {
+    if (car.stall < STALL_SEC && holder && holder !== car && this.cars.includes(holder)) {
       car.speed = 0;
       car.braking = false;
       return;
@@ -675,6 +696,7 @@ export class Traffic3D {
           braking: false,
           claimNode: -1,
           pace: driverOf(hash2(id, i, 11)).pace,
+          stall: 0,
           headway: driverOf(hash2(id, i, 11)).headway,
           ax: a.x + (b.x - a.x) * p,
           ay: a.y + (b.y - a.y) * p,
