@@ -6,7 +6,7 @@ import { SEASON_NAMES, WEATHER_NAMES } from "./sim/weather";
 import { DAY_MODE_NAMES, DayClock, START_HOUR, formatHour } from "./render/lighting";
 import { drawMapPreview } from "./render/mapPreview";
 import { City, type RoadQuote } from "./sim/city";
-import { DEFAULT_LANE_COUNT, LANE, MAX_LANE_COUNT, MIN_LANE_COUNT } from "./sim/roadTypes";
+import { DEFAULT_LANE_COUNT, LANE } from "./sim/roadTypes";
 import { DISTRICT_COLORS, GREENERY_NAMES, type Greenery } from "./sim/district";
 import { ACTION_DEFS, DEFAULT_KEYMAP, KEY_GROUP_NAMES, KEYMAP_STORAGE_KEY, actionFor, bindKey, keyLabel, parseKeymap, resolveKeyTokens, type ActionId, type KeyGroup, type Keymap } from "./keymap";
 import { type CameraBindings } from "./render3d/keyCamera";
@@ -36,7 +36,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.70.0";
+const VERSION = "0.71.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -385,7 +385,8 @@ async function main() {
   palette.append(oneWayBtn);
   // 車線: 中央分離帯・路上駐車・バス専用・自転車レーンを、組み合わせて敷ける (ボタンを押すとオン・オフ)
   let roadLanes = 0;
-  let roadLaneCount = DEFAULT_LANE_COUNT;
+  // 車線の数は、いまは既定の 2 車線だけ (スライダーは出さない)
+  const roadLaneCount = DEFAULT_LANE_COUNT;
   for (const [bit, label] of [[LANE_BITS.Median, "中央分離帯"], [LANE_BITS.Parking, "路上駐車"], [LANE_BITS.Bus, "バス専用"], [LANE_BITS.Bike, "自転車"]] as const) {
     const btn = document.createElement("button");
     btn.className = "oneway";
@@ -398,25 +399,6 @@ async function main() {
     });
     palette.append(btn);
   }
-  // 車線の数 (両方向の合計・2〜20)。多いほど車がたくさん流れるが、建設費も増える
-  const laneWrap = document.createElement("label");
-  laneWrap.id = "road-lane-count";
-  const laneLabel = document.createElement("span");
-  const laneSlider = document.createElement("input");
-  laneSlider.type = "range";
-  laneSlider.min = String(MIN_LANE_COUNT);
-  laneSlider.max = String(MAX_LANE_COUNT);
-  laneSlider.step = "1";
-  laneSlider.value = String(roadLaneCount);
-  const showLaneCount = () => (laneLabel.textContent = `車線 ${roadLaneCount}`);
-  showLaneCount();
-  laneSlider.addEventListener("input", () => {
-    roadLaneCount = Number(laneSlider.value);
-    showLaneCount();
-    roadQuoteKey = "";
-  });
-  laneWrap.append(laneLabel, laneSlider);
-  palette.append(laneWrap);
   // 曲線: 始点 → 制御点 → 終点の 3 クリックで敷く
   let roadCurve = false;
   let roadControl: { x: number; y: number } | null = null;
