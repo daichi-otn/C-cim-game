@@ -153,6 +153,9 @@
         #zone-palette button, #facility-palette button, #loop-palette button { font-size: 11px; padding: 3px 6px; }
         #tip { max-width: calc(100vw - 24px); font-size: 13px; }
         .sheet { width: calc(100vw - 24px) !important; max-width: none !important; }
+        /* Netlify のバッジ (右下の 202×64) が出ているときは、その上にツールバーを上げて、重ならないようにする */
+        body.has-badge #toolbar { bottom: 72px; }
+        body.has-badge #zone-palette, body.has-badge #facility-palette, body.has-badge #loop-palette, body.has-badge #road-palette { bottom: calc(var(--tb, 54px) + 14px + 64px); }
         .row-end { flex-wrap: wrap; }
         .row-end .btn { flex: 1 1 42%; white-space: nowrap; }
       }

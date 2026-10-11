@@ -32,7 +32,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.49.6";
+const VERSION = "0.49.7";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -149,6 +149,10 @@ async function main() {
     return;
   }
   const camera = world.view;
+  // ホスティング (Netlify) が右下に重ねるバッジ (id: nl-badge-frame) があるときは、画面の下の道具が隠れないように、位置を上げる
+  const markBadge = () => document.body.classList.toggle("has-badge", document.getElementById("nl-badge-frame") !== null);
+  markBadge();
+  new MutationObserver(markBadge).observe(document.body, { childList: true });
   // 情報パネル: 小さい画面では、畳んだり開いたりできる
   $("panel-toggle").addEventListener("click", () => $("panel").classList.toggle("open"));
   // グラフィック設定: メニューで変えて、保存する。保存がなければ、描画が軽い環境では「低」から始める
