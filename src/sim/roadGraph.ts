@@ -428,6 +428,11 @@ export class RoadGraph {
   }
 
   /** ノードに接続しているエッジ数。 */
+  /** この交差点につながる道路の区間。 */
+  edgesAt(nodeId: number): RoadEdge[] {
+    return [...(this.adj.get(nodeId) ?? [])].map((id) => this.edges.get(id)!);
+  }
+
   degree(nodeId: number): number {
     return this.adj.get(nodeId)?.size ?? 0;
   }

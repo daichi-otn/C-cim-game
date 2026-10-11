@@ -600,9 +600,10 @@ export class Traffic3D {
 
   /** 交差点の範囲 (中心からの半径、タイル)。道路の幅 (車線の数) で広がる。 */
   private junctionRadius(car: Car): number {
-    const e = this.city.graph.edges.get(car.edge);
-    if (!e) return CAR_LEN + 0.1;
-    return CAR_LEN + 0.1 + (e.laneCount * laneWidthTiles(e.type)) / 2;
+    const n = this.endNode(car);
+    let half = 0;
+    for (const e of this.city.graph.edgesAt(n)) half = Math.max(half, (e.laneCount * laneWidthTiles(e.type)) / 2);
+    return CAR_LEN + 0.1 + half;
   }
 
   /** 交差点の範囲に、ほかの車がいるか (自分を除く)。 */
@@ -732,7 +733,8 @@ export class Traffic3D {
       for (let i = here.length; i < want; i++) {
         const seed = hash2(id, i, 3) * 1e6;
         const dir = oneWayDir !== 0 ? oneWayDir : i % 2 === 0 ? 1 : -1;
-        const lane = (oneWayDir !== 0 ? i : Math.floor(i / 2)) % lanes;
+        // 車線は車ごとにばらして決める (台数が少ない道でも、外側の車線を使う)
+        const lane = Math.min(lanes - 1, Math.floor(hash2(id, i, 12) * lanes));
         const a = city.graph.nodes.get(city.graph.edges.get(id)!.a)!;
         const b = city.graph.nodes.get(city.graph.edges.get(id)!.b)!;
         // 同じ車線に、車が重ならない空いた場所へ置く。空きがなければ、この車は置かない
