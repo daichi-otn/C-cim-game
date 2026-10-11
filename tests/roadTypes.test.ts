@@ -49,7 +49,7 @@ describe("道路網と種類", () => {
     g.addRoad(0, 0, 10, 0, RoadType.Street);
     expect(g.addRoad(0, 0, 10, 0, RoadType.Street)).toBe(0);
     expect(g.addRoad(0, 0, 10, 0, RoadType.Avenue)).toBe(1);
-    expect(g.lastChange.changed).toEqual([{ length: 10, from: RoadType.Street, to: RoadType.Avenue, structure: 0, fromLanes: 2, toLanes: 2 }]);
+    expect(g.lastChange.changed).toEqual([{ length: 10, from: RoadType.Street, to: RoadType.Avenue, structure: 0 }]);
     expect(types(g)).toEqual([RoadType.Avenue]);
   });
   it("保存して読み込むと種類も戻り、種類のない古いデータは通りになる", () => {

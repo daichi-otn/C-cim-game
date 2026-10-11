@@ -81,20 +81,20 @@ await page.keyboard.press("c");
 check("C で曲線になる", (await page.locator("#road-curve.active").count()) === 1);
 const m3 = await money();
 const edgesBefore = Number(/edges=(\d+)/.exec(await page.textContent("#hud"))[1]);
-await click(page, cx(-3), cy(ROW0 + 25)); // 車線の数のスライダーが増えて、パレットが上に伸びたので、少し上でなぞる
-await click(page, cx(5), cy(ROW0 + 21)); // 制御点
-await page.mouse.move(cx(12), cy(ROW0 + 25));
+await click(page, cx(-3), cy(ROW0 + 26));
+await click(page, cx(5), cy(ROW0 + 22)); // 制御点
+await page.mouse.move(cx(12), cy(ROW0 + 26));
 await page.waitForTimeout(150);
 check("曲線の案内に「曲線」と出る", (await page.textContent("#tip")).includes("曲線"), await page.textContent("#tip"));
-await click(page, cx(12), cy(ROW0 + 25));
+await click(page, cx(12), cy(ROW0 + 26));
 await page.keyboard.press("Escape");
 await page.waitForTimeout(150);
 const edgesAfter = Number(/edges=(\d+)/.exec(await page.textContent("#hud"))[1]);
 check("曲線は細かい区間に分かれて敷かれ、お金が引かれる", edgesAfter - edgesBefore >= 5 && (await money()) < m3, `edges ${edgesBefore} -> ${edgesAfter}`);
 await page.screenshot({ path: `${out}-2-curve.png` });
 await page.keyboard.press("c");
-await page.keyboard.press("3"); // 撤去 (曲線の真ん中: 始点と終点の間の、制御点側)
-await click(page, cx(5), cy(ROW0 + 23));
+await page.keyboard.press("3"); // 撤去
+await click(page, cx(5), cy(ROW0 + 24));
 await page.waitForTimeout(150);
 const edgesGone = Number(/edges=(\d+)/.exec(await page.textContent("#hud"))[1]);
 check("撤去すると曲線は一続きで消える", edgesGone === edgesBefore, `edges ${edgesAfter} -> ${edgesGone}`);

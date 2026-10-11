@@ -37,7 +37,7 @@ export const congestionOf = (flow: number, capacity = EDGE_CAPACITY): number => 
 /** 道路の区間 edgeId の混雑具合 (その種類の容量に対する交通量の比)。 */
 export function edgeCongestion(graph: RoadGraph, edgeId: number, flow: number, capMult = 1): number {
   const e = graph.edges.get(edgeId);
-  return e ? congestionOf(flow, Math.max(1, roadCapacity(e.type, e.oneWay !== 0, e.lanes, e.laneCount) * capMult)) : 0;
+  return e ? congestionOf(flow, Math.max(1, roadCapacity(e.type, e.oneWay !== 0, e.lanes) * capMult)) : 0;
 }
 
 /** 渋滞が需要を下げる量 (0 以上)。平均の混雑具合が 0.8 を超えた分に比例し、最大 0.3。 */
@@ -196,7 +196,7 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1): Traf
       const slot = edgeIds.length;
       edgeIds.push(e.id);
       edgeLen.push(stops[k + 1]!.pos - stops[k]!.pos);
-      edgeCap.push(roadCapacity(e.type, e.oneWay !== 0, e.lanes, e.laneCount) * capMult);
+      edgeCap.push(roadCapacity(e.type, e.oneWay !== 0, e.lanes) * capMult);
       edgeSpeed.push(roadSpeed(e.type, e.oneWay !== 0));
       // 一方通行は、決まった向きにだけ進める (a → b なら、道路の始端から終端へ)
       if (e.oneWay !== -1) (adj[from] ??= []).push({ edge: slot, to });

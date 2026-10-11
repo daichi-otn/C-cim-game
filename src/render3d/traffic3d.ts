@@ -1,12 +1,12 @@
 import * as THREE from "three";
 import type { City } from "../sim/city";
 import { hash2 } from "../sim/rng";
-import { ROAD_SPECS, type RoadType } from "../sim/roadTypes";
+import { ROAD_SPECS } from "../sim/roadTypes";
 import { edgeCongestion } from "../sim/traffic";
 import type { RoadGraph } from "../sim/roadGraph";
 import { GeoBuilder } from "./geo";
 import { aheadGap, CAR, CAR_LEN, driverOf, idmAccel, lanePoint, nearestSegment, overlapsInLane, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "./carMotion";
-import { laneWidthTiles, type Roads3D } from "./roads3d";
+import type { Roads3D } from "./roads3d";
 import { TILE } from "./terrain3d";
 import type { ZoneCell } from "../sim/zoning";
 import { ZoneType } from "../sim/zoning";
@@ -21,10 +21,13 @@ const FLOW_PER_CAR = 5;
 const FREE_SPEED = 3;
 const MIN_SPEED_RATIO = 0.15;
 /** 車を描くときの、中心線からの距離 (px)。左側通行で、進行方向の左を走る。 */
+const LANE_PX = TILE * 0.14;
 const CAR_COLORS = [0xe8e8ea, 0xd9564a, 0x4a90e2, 0xf2c230, 0x5ec27a, 0x8a8f98];
 const CAPACITY = 6000;
 /** 同じ車線で、車どうしの中心をこのくらい (タイル) 離して置く。 */
 const SPAWN_GAP = 0.4;
+/** これだけ止まり続けた車は、交差点の譲り合いと、U ターンの待ちを一時的に気にしない (秒)。 */
+const STALL_SEC = 20;
 /** 前の車を探す距離 (タイル)。 */
 const LEADER_LOOK = 2.5;
 
@@ -135,9 +138,9 @@ interface Car {
   claimNode: number;
   /** 運転の個性: 速さの好みと、前の車との間隔 (秒)。 */
   pace: number;
+  /** 止まり続けている時間 (秒)。長すぎると、交差点の譲り合いを一時的に気にしない (渋滞の固まりを解くため)。 */
+  stall: number;
   headway: number;
-  /** 車線の番号 (同じ向きの車線の中で。0 が道路の中央に近い車線)。 */
-  lane: number;
   /** 車の中心の位置 (タイル)。道路が作り替わったとき、いまの道路へ戻すために使う。 */
   ax: number;
   ay: number;
@@ -164,11 +167,11 @@ function frontNodeOf(graph: RoadGraph, c: ZoneCell): number | null {
 
 /** 道路を走る車 (箱の車体と窓)・夜のライト・ブレーキのライト・混雑の色。車は住宅と職場を行き来し、前の車との間隔で加速・減速し、行き止まりでは U ターンする (見た目のみ)。 */
 /** 同じ区間・同じ向きの車と重ならない、空いた位置 (0〜1) を探す。見つからなければ null。 */
-function freeSlot(cars: Car[], dir: number, lane: number, start: number, len: number): number | null {
+function freeSlot(cars: Car[], dir: number, start: number, len: number): number | null {
   const step = SPAWN_GAP / len;
   for (let k = 0; k < 60; k++) {
     const cand = 0.05 + ((start + k * step) % 0.9);
-    if (cars.every((c) => c.dir !== dir || c.lane !== lane || Math.abs(c.p - cand) * len >= SPAWN_GAP)) return cand;
+    if (cars.every((c) => c.dir !== dir || Math.abs(c.p - cand) * len >= SPAWN_GAP)) return cand;
   }
   return null;
 }
@@ -273,9 +276,8 @@ export class Traffic3D {
       const dx = Math.cos(car.heading);
       const dz = Math.sin(car.heading);
       // 進行方向の左側を走る (y が南向きなので、進行方向 (dx,dz) の左は (dz,-dx))
-      const off = this.laneOffsetOf(car) * TILE;
-      const x = (a.x + (b.x - a.x) * p) * TILE + dz * off;
-      const z = (a.y + (b.y - a.y) * p) * TILE - dx * off;
+      const x = (a.x + (b.x - a.x) * p) * TILE + dz * LANE_PX;
+      const z = (a.y + (b.y - a.y) * p) * TILE - dx * LANE_PX;
       const y = this.roads.heightOnEdge(car.edge, p);
       this.tmpQ.setFromAxisAngle(this.up, -car.heading);
       this.tmpM.compose(new THREE.Vector3(x, y, z), this.tmpQ, new THREE.Vector3(1, 1, 1));
@@ -358,6 +360,7 @@ export class Traffic3D {
     const a = graph.nodes.get(e.a)!;
     const b = graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
+    car.stall = car.speed < 0.02 ? car.stall + dt : 0;
     const ratio = edgeCongestion(graph, car.edge, this.city.traffic.flow.get(car.edge) ?? 0, this.city.traffic.capMult);
     let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
     const distToEnd = (car.dir > 0 ? 1 - car.p : car.p) * len;
@@ -376,7 +379,8 @@ export class Traffic3D {
       if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.4);
     }
     // 交差点: 先に着く車がいるなら、手前で止まって譲る (車が交差点の中で重ならないように)
-    if (distToEnd < 3 && distToEnd > 0.5 && (this.mustYield(car, distToEnd) || this.junctionHeld(car) || this.mustSignalStop(car, distToEnd)))
+    const patient = car.stall < STALL_SEC;
+    if (distToEnd < 3 && distToEnd > 0.5 && ((patient && (this.mustYield(car, distToEnd) || this.junctionHeld(car))) || this.mustSignalStop(car, distToEnd)))
       vTarget = Math.min(vTarget, stopSpeed(distToEnd - 0.4) + 0.05);
     // 前の車との間隔
     const leader = this.leaderOf(car);
@@ -388,15 +392,6 @@ export class Traffic3D {
     if (leader && travel > leader.gap) {
       travel = Math.max(0, leader.gap);
       car.speed = dt > 0 ? travel / dt : 0;
-    }
-    // 交差点の中にほかの車がいれば、交差点の手前で止まる (車線が多い道ほど、交差点の範囲も広い)
-    const r = this.junctionRadius(car);
-    if (distToEnd > 0 && distToEnd < r + 1 && this.junctionOccupied(this.endNode(car), car, r)) {
-      const allowed = Math.max(0, distToEnd - r);
-      if (travel > allowed) {
-        travel = allowed;
-        car.speed = dt > 0 ? travel / dt : 0;
-      }
     }
     car.p += (car.dir * travel) / len;
     // 交差点から十分に離れたら、その交差点を手放す
@@ -447,11 +442,11 @@ export class Traffic3D {
   /** 同じ車線で前にいる車との距離 (タイル) と、その速さ。区間をまたいで、交差点の先まで見る。 */
   private leaderOf(car: Car): { gap: number; speed: number } | null {
     const h = this.laneHeading(car);
-    const me = this.lanePos(car);
+    const me = lanePoint(car.ax, car.ay, h);
     let best: { gap: number; speed: number } | null = null;
     for (const o of this.cars) {
       if (o === car) continue;
-      const q = this.lanePos(o);
+      const q = lanePoint(o.ax, o.ay, this.laneHeading(o));
       let gap = aheadGap(me.x, me.y, h, q.x, q.y, LEADER_LOOK);
       // ちょうど同じ場所に重なった車 (前後が決められない): 番号の小さい方が止まり、大きい方は走って離れる
       if (gap === null && overlapsInLane(me.x, me.y, h, q.x, q.y)) {
@@ -467,20 +462,7 @@ export class Traffic3D {
 
   /** 車の中心の位置 (タイル、車線の上)。 */
   private lanePos(car: Car): { x: number; y: number } {
-    return lanePoint(car.ax, car.ay, this.laneHeading(car), this.laneOffsetOf(car));
-  }
-
-  /** 道路の中央線から、車線の中央までの横のずれ (タイル、進む向きの左が正)。 */
-  private laneOffsetOf(car: Car): number {
-    const e = this.city.graph.edges.get(car.edge);
-    return e ? laneOffsetIn(e, car.lane) : 0.14;
-  }
-
-  /** この区間の、同じ向きの車線の数。一方通行は全部の車線が同じ向き。 */
-  private lanesIn(edgeId: number, oneWay: boolean): number {
-    const e = this.city.graph.edges.get(edgeId);
-    if (!e) return 1;
-    return oneWay || e.oneWay !== 0 ? e.laneCount : Math.ceil(e.laneCount / 2);
+    return lanePoint(car.ax, car.ay, this.laneHeading(car));
   }
 
   /** 車線の向き。区間の向きと進む向きから決める (車の今の向きは、停車中や曲がり角で、ずれることがあるため使わない)。 */
@@ -531,8 +513,7 @@ export class Traffic3D {
     }
     // 交差点は一度に 1 台: ほかの車が通り抜けている交差点へは入らない
     const holder = this.nodeHolder.get(reached);
-    if (holder && holder !== car && this.cars.includes(holder)) {
-      this.stopBack(car);
+    if (car.stall < STALL_SEC && holder && holder !== car && this.cars.includes(holder)) {
       car.speed = 0;
       car.braking = false;
       return;
@@ -547,7 +528,6 @@ export class Traffic3D {
       return;
     }
     car.edge = step.edge;
-    car.lane = Math.min(car.lane, this.lanesIn(step.edge, this.city.graph.edges.get(step.edge)?.oneWay !== 0) - 1);
     car.dir = step.dir;
     car.p = step.dir > 0 ? 0 : 1;
     // 次の区間へ進んだので、その先の道順が要る (route は次の区間より先の分)
@@ -566,10 +546,7 @@ export class Traffic3D {
     const a = this.city.graph.nodes.get(e.a)!;
     const b = this.city.graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    return this.cars.some((o) => {
-      if (o === car || o.edge !== car.edge || o.dir !== dir || o.lane !== car.lane || Math.abs(o.p - car.p) * len >= CAR_LEN + 0.1) return false;
-      return true;
-    });
+    return this.cars.some((o) => o !== car && o.edge === car.edge && o.dir === dir && Math.abs(o.p - car.p) * len < CAR_LEN + 0.1);
   }
 
   /** 信号: 赤なら止まる。黄色は、止まれるなら止まる (止まれないときは、そのまま通る)。 */
@@ -588,47 +565,16 @@ export class Traffic3D {
     return !!h && h !== car && this.cars.includes(h);
   }
 
-  /** 交差点へ入れず止まるときは、交差点の手前 (半タイル) まで戻す。交差点の中に止まらないように。 */
-  private stopBack(car: Car): void {
-    const e = this.city.graph.edges.get(car.edge);
-    if (!e) return;
-    const a = this.city.graph.nodes.get(e.a)!;
-    const b = this.city.graph.nodes.get(e.b)!;
-    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    car.p = car.dir > 0 ? Math.max(0, 1 - 0.5 / len) : Math.min(1, 0.5 / len);
-  }
-
-  /** 交差点の範囲 (中心からの半径、タイル)。道路の幅 (車線の数) で広がる。 */
-  private junctionRadius(car: Car): number {
-    const n = this.endNode(car);
-    let half = 0;
-    for (const e of this.city.graph.edgesAt(n)) half = Math.max(half, (e.laneCount * laneWidthTiles(e.type)) / 2);
-    return CAR_LEN + 0.1 + half;
-  }
-
-  /** 交差点の範囲に、ほかの車がいるか (自分を除く)。 */
-  private junctionOccupied(nodeId: number, car: Car, r: number): boolean {
-    const n = this.city.graph.nodes.get(nodeId);
-    if (!n) return false;
-    return this.cars.some((o) => {
-      if (o === car) return false;
-      const q = this.lanePos(o);
-      return Math.hypot(q.x - n.x, q.y - n.y) < r - 0.2;
-    });
-  }
-
   /** 次の区間の入り口に、車 (どの区間の車でも) がいるか。交差点の手前の車も含めて、重ならないように待つ。 */
   private entryBlocked(car: Car, step: Step): boolean {
     const e = this.city.graph.edges.get(step.edge);
     if (!e) return false;
     const n = this.city.graph.nodes.get(step.dir > 0 ? e.a : e.b)!;
-    // 交差点の中心から、道路の半分の幅 (車線の数で広がる) と車の長さの範囲に、ほかの車がいれば入らない
-    const half = (e.laneCount * laneWidthTiles(e.type)) / 2;
-    const r = CAR_LEN + 0.1 + half;
+    const entry = lanePoint(n.x, n.y, this.headingOf(step));
     return this.cars.some((o) => {
       if (o === car) return false;
       const q = this.lanePos(o);
-      return Math.hypot(q.x - n.x, q.y - n.y) < r;
+      return Math.hypot(q.x - entry.x, q.y - entry.y) < CAR_LEN + 0.1;
     });
   }
 
@@ -709,7 +655,6 @@ export class Traffic3D {
         const a = city.graph.nodes.get(e.a)!;
         const b = city.graph.nodes.get(e.b)!;
         c.edge = near.id;
-        c.lane = Math.min(c.lane, this.lanesIn(near.id, e.oneWay !== 0) - 1);
         c.p = near.t;
         // 向きは、いまの車の向きに近い方 (一方通行なら、その向き)
         c.dir = e.oneWay !== 0 ? e.oneWay : Math.cos(c.heading) * (b.x - a.x) + Math.sin(c.heading) * (b.y - a.y) >= 0 ? 1 : -1;
@@ -720,26 +665,21 @@ export class Traffic3D {
     }
     for (const [id, flow] of city.traffic.flow) {
       if (!city.graph.edges.has(id)) continue;
-      // 車線が多い道ほど、同時に走れる台数も増える (2 車線の 12 台が基準)
-      const maxCars = Math.round((MAX_CARS_PER_EDGE * city.graph.edges.get(id)!.laneCount) / 2);
-      const want = this.carScale <= 0 ? 0 : Math.round(Math.min(maxCars, Math.max(1, Math.round(flow / FLOW_PER_CAR))) * this.carScale);
+      const want = this.carScale <= 0 ? 0 : Math.round(Math.min(MAX_CARS_PER_EDGE, Math.max(1, Math.round(flow / FLOW_PER_CAR))) * this.carScale);
       const oneWayDir = city.graph.edges.get(id)!.oneWay;
       const here = kept.filter((c) => c.edge === id);
       while (here.length > want) {
         const removed = here.pop()!;
         kept.splice(kept.indexOf(removed), 1);
       }
-      const lanes = this.lanesIn(id, oneWayDir !== 0);
       for (let i = here.length; i < want; i++) {
         const seed = hash2(id, i, 3) * 1e6;
         const dir = oneWayDir !== 0 ? oneWayDir : i % 2 === 0 ? 1 : -1;
-        // 車線は車ごとにばらして決める (台数が少ない道でも、外側の車線を使う)
-        const lane = Math.min(lanes - 1, Math.floor(hash2(id, i, 12) * lanes));
         const a = city.graph.nodes.get(city.graph.edges.get(id)!.a)!;
         const b = city.graph.nodes.get(city.graph.edges.get(id)!.b)!;
         // 同じ車線に、車が重ならない空いた場所へ置く。空きがなければ、この車は置かない
         const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        const p = freeSlot(here, dir, lane, hash2(id, i, 4), len);
+        const p = freeSlot(here, dir, hash2(id, i, 4), len);
         if (p === null) break;
         const car: Car = {
           edge: id,
@@ -756,8 +696,8 @@ export class Traffic3D {
           uturn: -1,
           braking: false,
           claimNode: -1,
-          lane,
           pace: driverOf(hash2(id, i, 11)).pace,
+          stall: 0,
           headway: driverOf(hash2(id, i, 11)).headway,
           ax: a.x + (b.x - a.x) * p,
           ay: a.y + (b.y - a.y) * p,
@@ -803,11 +743,4 @@ export class Traffic3D {
       (this.heatMesh.material as THREE.Material).dispose();
     }
   }
-}
-
-/** 区間の車線 (同じ向きの中の番号) の、道路の中央線からの横のずれ (タイル)。一方通行は、道路の両側に車線を並べる。 */
-function laneOffsetIn(e: { type: RoadType; laneCount: number; oneWay: number }, lane: number): number {
-  const w = laneWidthTiles(e.type);
-  if (e.oneWay !== 0) return (lane + 0.5) * w - (e.laneCount * w) / 2;
-  return (lane + 0.5) * w;
 }

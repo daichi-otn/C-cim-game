@@ -100,7 +100,7 @@ export function aheadGap(mx: number, my: number, h: number, ox: number, oy: numb
   const along = rx * fx + ry * fy;
   const lateral = Math.abs(-rx * fy + ry * fx);
   // 対向車線は、横に 2 倍の距離 (0.28) ずれているので、数えない。曲がり角のずれも許すように、少し広く見る
-  if (along <= 0 || along > look || lateral > 0.15) return null;
+  if (along <= 0 || along > look || lateral > 0.2) return null;
   return along - CAR_LEN;
 }
 
@@ -114,8 +114,8 @@ export function overlapsInLane(mx: number, my: number, h: number, ox: number, oy
 }
 
 /** 車線の上の、車の中心の位置 (タイル)。(ax,ay) は道路の中心線の上の点、h は車線の向き。左側を走る。 */
-export function lanePoint(ax: number, ay: number, h: number, off: number = LANE_OFFSET): { x: number; y: number } {
-  return { x: ax + Math.sin(h) * off, y: ay - Math.cos(h) * off };
+export function lanePoint(ax: number, ay: number, h: number): { x: number; y: number } {
+  return { x: ax + Math.sin(h) * LANE_OFFSET, y: ay - Math.cos(h) * LANE_OFFSET };
 }
 
 /**

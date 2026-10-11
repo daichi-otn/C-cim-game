@@ -58,12 +58,6 @@ const STYLES: Record<RoadType, RoadStyle> = {
 /** 種類ごとの道路の幅 (px)。 */
 export const roadWidthPx = (t: RoadType) => STYLES[t].road;
 
-/** 車線 1 本の幅 (タイル)。2 車線の道路が、その種類の道路の幅になる。車の位置も、この幅で車線の中央に並ぶ。 */
-export const laneWidthTiles = (t: RoadType) => STYLES[t].road / TILE / 2;
-
-/** 車線の数に応じた道路の幅 (px)。2 車線が種類の道路の幅で、車線が増えるほど広くなる。 */
-const roadWidthOf = (t: RoadType, laneCount: number) => (STYLES[t].road * laneCount) / 2;
-
 let asphaltCache: THREE.CanvasTexture | null = null;
 
 /** アスファルトの細かいざらつきを描いた、タイルして使うテクスチャ。作り直さず使い回す。 */
@@ -99,7 +93,6 @@ interface Seg {
   oneWay: number;
   /** 車線の種類 (LANE のビット)。 */
   lanes: number;
-  laneCount: number;
   a: RoadNode;
   b: RoadNode;
   ax: number;
@@ -194,7 +187,7 @@ export class Roads3D {
       const bx = b.x * TILE;
       const bz = b.y * TILE;
       const lift = (nid: number) => (e.structure === Structure.Bridge && (bridgeEnds.get(nid)?.other ?? 0) === 0 ? 1 : 0);
-      return { structure: e.structure, oneWay: e.oneWay, lanes: e.lanes, laneCount: e.laneCount, a, b, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), type: e.type, liftA: lift(e.a), liftB: lift(e.b) };
+      return { structure: e.structure, oneWay: e.oneWay, lanes: e.lanes, a, b, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), type: e.type, liftA: lift(e.a), liftB: lift(e.b) };
     });
     this.edgeInfo.clear();
     [...edges.values()].forEach((e, i) => this.edgeInfo.set(e.id, { structure: all[i]!.structure, len: all[i]!.len, liftA: all[i]!.liftA, liftB: all[i]!.liftB }));
@@ -218,8 +211,6 @@ export class Roads3D {
     const steps = (sg: Seg) => (sg.structure === Structure.Bridge ? Math.max(2, Math.ceil(sg.len / 6)) : 1);
     /** 道路の区間を、幅 w・高さ yBase の帯として (橋なら段々に高さを変えて) 描く。 */
     /** 道路の中心線から、進行方向の左へ off ずらした帯 (車線の色)。 */
-    /** 車線の数に応じた、道路の幅 (2 車線が基準。増えるほど広くなるが、歩道が残る程度まで)。 */
-    const widthOf = (sg: Seg) => roadWidthOf(sg.type, sg.laneCount);
     const bandOff = (b: GeoBuilder, sg: Seg, off: number, w: number, yBase: number, color: number) => {
       const nx = (-(sg.bz - sg.az) / sg.len) * off;
       const nz = ((sg.bx - sg.ax) / sg.len) * off;
@@ -280,16 +271,13 @@ export class Roads3D {
       const st = STYLES[t];
       if (st.sidewalk === 0) continue;
       const r = rank.get(t)! * 0.01;
-      // 歩道は、道路の幅が広がった分だけ外へ下がる (種類ごとの歩道の幅は変えない)
       for (const sg of byType.get(t)!) {
-        const extra = widthOf(sg) - st.road;
-        band(g, sg, st.sidewalk + extra + 0.8, Y_SIDEWALK + r, 0x8b8880);
-        band(g, sg, st.sidewalk + extra - 0.6, Y_SIDEWALK + r + 0.005, st.walk);
+        band(g, sg, st.sidewalk + 0.8, Y_SIDEWALK + r, 0x8b8880);
+        band(g, sg, st.sidewalk - 0.6, Y_SIDEWALK + r + 0.005, st.walk);
       }
       for (const n of nodesOf(byType.get(t)!)) {
-        const extra = n.w - st.road;
-        g.disc(n.x, n.z, (st.sidewalk + extra + 0.8) / 2, n.y + Y_SIDEWALK + r, 0x8b8880, 12);
-        g.disc(n.x, n.z, (st.sidewalk + extra - 0.6) / 2, n.y + Y_SIDEWALK + r + 0.005, st.walk, 12);
+        g.disc(n.x, n.z, (st.sidewalk + 0.8) / 2, n.y + Y_SIDEWALK + r, 0x8b8880, 12);
+        g.disc(n.x, n.z, (st.sidewalk - 0.6) / 2, n.y + Y_SIDEWALK + r + 0.005, st.walk, 12);
       }
     }
     // 2. 車道 (縁石の段差 → 路面)。歩行者道と路地は舗装の色で塗り、ほかはアスファルトの質感
@@ -299,35 +287,19 @@ export class Roads3D {
       const surface = st.plain === null ? ga : g;
       const color = st.plain === null ? st.tint : st.plain;
       for (const sg of byType.get(t)!) {
-        const w = widthOf(sg);
-        band(g, sg, w + 1.2, Y_ROAD + r, st.curb);
-        band(surface, sg, w, Y_ROAD + r + 0.005, color);
+        band(g, sg, st.road + 1.2, Y_ROAD + r, st.curb);
+        band(surface, sg, st.road, Y_ROAD + r + 0.005, color);
       }
       for (const n of nodesOf(byType.get(t)!)) {
-        g.disc(n.x, n.z, (n.w + 1.2) / 2, n.y + Y_ROAD + r, st.curb, 12);
-        surface.disc(n.x, n.z, n.w / 2, n.y + Y_ROAD + r + 0.005, color, 12);
-      }
-    }
-    // 車線の数: 車線と車線の間に、白い点線を引く (2 車線の中央は、中央線が既にある)
-    for (const sg of all) {
-      if (sg.laneCount <= 2 || sg.len < 1e-6) continue;
-      const w = widthOf(sg);
-      const ux = (sg.bx - sg.ax) / sg.len;
-      const uz = (sg.bz - sg.az) / sg.len;
-      for (let i = 1; i < sg.laneCount; i++) {
-        const off = -w / 2 + (i * w) / sg.laneCount;
-        if (Math.abs(off) < 0.01) continue;
-        for (let d = 0; d < sg.len; d += 6) {
-          const e = Math.min(d + 3, sg.len);
-          const part: Seg = { ...sg, ax: sg.ax + ux * d, az: sg.az + uz * d, bx: sg.ax + ux * e, bz: sg.az + uz * e, len: e - d };
-          bandOff(g, part, off, 0.5, Y_ROAD + 0.03, 0xe8e8e0);
-        }
+        g.disc(n.x, n.z, (st.road + 1.2) / 2, n.y + Y_ROAD + r, st.curb, 12);
+        surface.disc(n.x, n.z, st.road / 2, n.y + Y_ROAD + r + 0.005, color, 12);
       }
     }
     // 車線: 中央分離帯・路上駐車・バス専用・自転車レーンを、路面の上に色の帯で描く
     for (const sg of all) {
       if (sg.lanes === 0) continue;
-      const half = widthOf(sg) / 2;
+      const st = STYLES[sg.type];
+      const half = st.road / 2;
       const side = (off: number, w: number, color: number) => bandOff(g, sg, off, w, Y_ROAD + 0.02, color);
       if (sg.lanes & LANE.Median) side(0, 1.4, 0x9aa890);
       if (sg.lanes & LANE.Parking) {
@@ -493,7 +465,7 @@ export class Roads3D {
 
     // 5. 交差点: 路面を広げ、各方向に横断歩道を描く
     const nodeWidth = new Map<number, number>();
-    for (const sg of all) for (const n of [sg.a, sg.b]) nodeWidth.set(n.id, Math.max(nodeWidth.get(n.id) ?? 0, roadWidthOf(sg.type, sg.laneCount)));
+    for (const sg of all) for (const n of [sg.a, sg.b]) nodeWidth.set(n.id, Math.max(nodeWidth.get(n.id) ?? 0, STYLES[sg.type].road));
     for (const n of nodes.values()) {
       if (this.graph.degree(n.id) < 3) continue;
       const touchesBridge = (bridgeEnds.get(n.id)?.bridge ?? 0) > 0;
@@ -511,7 +483,7 @@ export class Roads3D {
         if (this.graph.degree(node.id) < 3) continue;
         const px = node.x * TILE + ux * dir * CROSSWALK_DIST;
         const pz = node.y * TILE + uz * dir * CROSSWALK_DIST;
-        const half = roadWidthOf(sg.type, sg.laneCount) * 0.46;
+        const half = st.road * 0.46;
         const step = (half * 2) / CROSSWALK_STRIPES;
         for (let i = 0; i < CROSSWALK_STRIPES; i++) {
           const o = -half + step * (i + 0.5);
@@ -584,17 +556,11 @@ const smooth01 = (t: number) => {
 };
 
 /** 区間の端のノードを (重複なしで) 集め、その高さ (橋の端なら、橋の高さにそろえる) とともに返す。 */
-/** 道路の端 (交差点) ごとの位置と、つながる道路のうち一番広い幅 (px)。 */
-function nodesOf(segs: Seg[]): { x: number; z: number; y: number; w: number }[] {
-  const out = new Map<number, { x: number; z: number; y: number; w: number }>();
-  const put = (id: number, x: number, z: number, y: number, w: number) => {
-    const cur = out.get(id);
-    out.set(id, { x, z, y, w: Math.max(cur?.w ?? 0, w) });
-  };
+function nodesOf(segs: Seg[]): { x: number; z: number; y: number }[] {
+  const out = new Map<number, { x: number; z: number; y: number }>();
   for (const sg of segs) {
-    const w = roadWidthOf(sg.type, sg.laneCount);
-    put(sg.a.id, sg.ax, sg.az, sg.structure === Structure.Bridge && sg.liftA ? BRIDGE_Y : 0, w);
-    put(sg.b.id, sg.bx, sg.bz, sg.structure === Structure.Bridge && sg.liftB ? BRIDGE_Y : 0, w);
+    out.set(sg.a.id, { x: sg.ax, z: sg.az, y: sg.structure === Structure.Bridge && sg.liftA ? BRIDGE_Y : 0 });
+    out.set(sg.b.id, { x: sg.bx, z: sg.bz, y: sg.structure === Structure.Bridge && sg.liftB ? BRIDGE_Y : 0 });
   }
   return [...out.values()];
 }
