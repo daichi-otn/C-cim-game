@@ -93,6 +93,7 @@ interface Seg {
   oneWay: number;
   /** 車線の種類 (LANE のビット)。 */
   lanes: number;
+  laneCount: number;
   a: RoadNode;
   b: RoadNode;
   ax: number;
@@ -187,7 +188,7 @@ export class Roads3D {
       const bx = b.x * TILE;
       const bz = b.y * TILE;
       const lift = (nid: number) => (e.structure === Structure.Bridge && (bridgeEnds.get(nid)?.other ?? 0) === 0 ? 1 : 0);
-      return { structure: e.structure, oneWay: e.oneWay, lanes: e.lanes, a, b, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), type: e.type, liftA: lift(e.a), liftB: lift(e.b) };
+      return { structure: e.structure, oneWay: e.oneWay, lanes: e.lanes, laneCount: e.laneCount, a, b, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), type: e.type, liftA: lift(e.a), liftB: lift(e.b) };
     });
     this.edgeInfo.clear();
     [...edges.values()].forEach((e, i) => this.edgeInfo.set(e.id, { structure: all[i]!.structure, len: all[i]!.len, liftA: all[i]!.liftA, liftB: all[i]!.liftB }));
@@ -211,6 +212,8 @@ export class Roads3D {
     const steps = (sg: Seg) => (sg.structure === Structure.Bridge ? Math.max(2, Math.ceil(sg.len / 6)) : 1);
     /** 道路の区間を、幅 w・高さ yBase の帯として (橋なら段々に高さを変えて) 描く。 */
     /** 道路の中心線から、進行方向の左へ off ずらした帯 (車線の色)。 */
+    /** 車線の数に応じた、道路の幅 (2 車線が基準。増えるほど広くなるが、歩道が残る程度まで)。 */
+    const widthOf = (sg: Seg) => STYLES[sg.type].road * Math.min(1.5, 1 + 0.05 * Math.max(0, sg.laneCount - 2));
     const bandOff = (b: GeoBuilder, sg: Seg, off: number, w: number, yBase: number, color: number) => {
       const nx = (-(sg.bz - sg.az) / sg.len) * off;
       const nz = ((sg.bx - sg.ax) / sg.len) * off;
@@ -287,19 +290,35 @@ export class Roads3D {
       const surface = st.plain === null ? ga : g;
       const color = st.plain === null ? st.tint : st.plain;
       for (const sg of byType.get(t)!) {
-        band(g, sg, st.road + 1.2, Y_ROAD + r, st.curb);
-        band(surface, sg, st.road, Y_ROAD + r + 0.005, color);
+        const w = widthOf(sg);
+        band(g, sg, w + 1.2, Y_ROAD + r, st.curb);
+        band(surface, sg, w, Y_ROAD + r + 0.005, color);
       }
       for (const n of nodesOf(byType.get(t)!)) {
         g.disc(n.x, n.z, (st.road + 1.2) / 2, n.y + Y_ROAD + r, st.curb, 12);
         surface.disc(n.x, n.z, st.road / 2, n.y + Y_ROAD + r + 0.005, color, 12);
       }
     }
+    // 車線の数: 車線と車線の間に、白い点線を引く (2 車線の中央は、中央線が既にある)
+    for (const sg of all) {
+      if (sg.laneCount <= 2 || sg.len < 1e-6) continue;
+      const w = widthOf(sg);
+      const ux = (sg.bx - sg.ax) / sg.len;
+      const uz = (sg.bz - sg.az) / sg.len;
+      for (let i = 1; i < sg.laneCount; i++) {
+        const off = -w / 2 + (i * w) / sg.laneCount;
+        if (Math.abs(off) < 0.01) continue;
+        for (let d = 0; d < sg.len; d += 6) {
+          const e = Math.min(d + 3, sg.len);
+          const part: Seg = { ...sg, ax: sg.ax + ux * d, az: sg.az + uz * d, bx: sg.ax + ux * e, bz: sg.az + uz * e, len: e - d };
+          bandOff(g, part, off, 0.5, Y_ROAD + 0.03, 0xe8e8e0);
+        }
+      }
+    }
     // 車線: 中央分離帯・路上駐車・バス専用・自転車レーンを、路面の上に色の帯で描く
     for (const sg of all) {
       if (sg.lanes === 0) continue;
-      const st = STYLES[sg.type];
-      const half = st.road / 2;
+      const half = widthOf(sg) / 2;
       const side = (off: number, w: number, color: number) => bandOff(g, sg, off, w, Y_ROAD + 0.02, color);
       if (sg.lanes & LANE.Median) side(0, 1.4, 0x9aa890);
       if (sg.lanes & LANE.Parking) {
