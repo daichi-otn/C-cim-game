@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAR, idmAccel, stepSpeed, stopSpeed, turnToward, wrapAngle } from "../src/render3d/carMotion";
+import { CAR, idmAccel, nearestSegment, projectOnSegment, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "../src/render3d/carMotion";
 
 describe("車の加速と減速", () => {
   it("空いている道では、目標の速さまで加速し、そこで止まる", () => {
@@ -41,5 +41,32 @@ describe("車の向き", () => {
   it("角度は −π〜π に収まる", () => {
     expect(wrapAngle(3 * Math.PI)).toBeCloseTo(Math.PI, 9);
     expect(wrapAngle(-3 * Math.PI)).toBeCloseTo(-Math.PI, 9);
+  });
+});
+
+describe("道路が作り替わったときに、車の位置を合わせる", () => {
+  it("線分の上の、一番近い位置を返す (端を越えたら端に収める)", () => {
+    expect(projectOnSegment(5, 2, 0, 0, 10, 0)).toEqual({ t: 0.5, dist: 2 });
+    expect(projectOnSegment(-3, 0, 0, 0, 10, 0).t).toBe(0);
+  });
+  it("交差点で分割されたら、車は位置が近い方の半分へ移る", () => {
+    const segs = [
+      { id: 1, ax: 0, ay: 0, bx: 5, by: 0 },
+      { id: 2, ax: 5, ay: 0, bx: 10, by: 0 },
+    ];
+    expect(nearestSegment(7, 0.3, segs)).toEqual({ id: 2, t: 0.4 });
+    expect(nearestSegment(1, -0.2, segs)?.id).toBe(1);
+    expect(nearestSegment(0, 0, [])).toBeNull();
+  });
+});
+
+describe("交差点で譲る", () => {
+  it("相手の方が交差点に近い (先に着く) なら譲る", () => {
+    expect(yieldsTo(2, 5, 1, 9)).toBe(true);
+    expect(yieldsTo(1, 5, 2, 9)).toBe(false);
+  });
+  it("距離が同じときは番号の小さい方が先で、互いに譲り合わない", () => {
+    expect(yieldsTo(1, 7, 1, 3)).toBe(true);
+    expect(yieldsTo(1, 3, 1, 7)).toBe(false);
   });
 });

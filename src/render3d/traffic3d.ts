@@ -5,7 +5,7 @@ import { ROAD_SPECS } from "../sim/roadTypes";
 import { edgeCongestion } from "../sim/traffic";
 import type { RoadGraph } from "../sim/roadGraph";
 import { GeoBuilder } from "./geo";
-import { CAR, idmAccel, stepSpeed, stopSpeed, turnToward, wrapAngle } from "./carMotion";
+import { CAR, idmAccel, nearestSegment, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "./carMotion";
 import type { Roads3D } from "./roads3d";
 import { TILE } from "./terrain3d";
 import type { ZoneCell } from "../sim/zoning";
@@ -126,6 +126,9 @@ interface Car {
   /** U ターンの進み (秒)。-1 なら、U ターンしていない。 */
   uturn: number;
   braking: boolean;
+  /** 車の中心の位置 (タイル)。道路が作り替わったとき、いまの道路へ戻すために使う。 */
+  ax: number;
+  ay: number;
 }
 
 const DWELL_MIN = 3;
@@ -231,6 +234,8 @@ export class Traffic3D {
       const a = graph.nodes.get(e.a)!;
       const b = graph.nodes.get(e.b)!;
       const p = car.p;
+      car.ax = a.x + (b.x - a.x) * p;
+      car.ay = a.y + (b.y - a.y) * p;
       const dx = Math.cos(car.heading);
       const dz = Math.sin(car.heading);
       // 進行方向の左側を走る (y が南向きなので、進行方向 (dx,dz) の左は (dz,-dx))
@@ -323,6 +328,8 @@ export class Traffic3D {
       const nd = Math.abs(this.headingOf(next) - car.heading);
       if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.4);
     }
+    // 交差点: 先に着く車がいるなら、手前で止まって譲る (車が交差点の中で重ならないように)
+    if (distToEnd < 3 && distToEnd > 0.5 && this.mustYield(car, distToEnd)) vTarget = Math.min(vTarget, stopSpeed(distToEnd - 0.4) + 0.05);
     // 前の車との間隔
     const leader = this.leaderOf(car, len);
     const accel = idmAccel(car.speed, vTarget, leader?.gap ?? null, leader?.speed ?? 0);
@@ -332,6 +339,22 @@ export class Traffic3D {
     // 向きは、今の区間の向きへ、急に変えずに回す
     car.heading = turnToward(car.heading, this.headingOf({ edge: car.edge, dir: car.dir }), CAR.turnRate, dt);
     if (car.p >= 1 || car.p <= 0) this.arrive(car);
+  }
+
+  /** 交差点へ向かう、ほかの車 (動いていて、同じ交差点へ向かう) が、先に着くか。 */
+  private mustYield(car: Car, distToEnd: number): boolean {
+    const node = this.endNode(car);
+    for (const o of this.cars) {
+      if (o === car || o.dwell > 0 || o.uturn >= 0 || o.speed < 0.3) continue;
+      if (o.edge === car.edge && o.dir === car.dir) continue; // 同じ車線の前の車は、間隔の計算で扱う
+      if (this.endNode(o) !== node) continue;
+      const oe = this.city.graph.edges.get(o.edge);
+      if (!oe) continue;
+      const olen = Math.hypot(this.city.graph.nodes.get(oe.b)!.x - this.city.graph.nodes.get(oe.a)!.x, this.city.graph.nodes.get(oe.b)!.y - this.city.graph.nodes.get(oe.a)!.y) || 1;
+      const oDist = (o.dir > 0 ? 1 - o.p : o.p) * olen;
+      if (oDist < 3 && yieldsTo(distToEnd, car.seed, oDist, o.seed)) return true;
+    }
+    return false;
   }
 
   /** 区間の向き (ラジアン)。 */
@@ -432,7 +455,34 @@ export class Traffic3D {
   /** 交通量が変わったので、車の台数を合わせ直し、混雑の色を作り直す。 */
   private rebuild(): void {
     const { city } = this;
-    const kept: Car[] = this.carScale <= 0 ? [] : this.cars.filter((c) => city.graph.edges.has(c.edge));
+    // 道路が作り替わると、車の区間が消える (交差点で分割された等)。車は消さず、いまの位置に近い区間へ移す
+    const kept: Car[] = [];
+    if (this.carScale > 0) {
+      let segs: { id: number; ax: number; ay: number; bx: number; by: number }[] | null = null;
+      for (const c of this.cars) {
+        if (city.graph.edges.has(c.edge)) {
+          kept.push(c);
+          continue;
+        }
+        segs ??= [...city.graph.edges.values()].map((e) => {
+          const a = city.graph.nodes.get(e.a)!;
+          const b = city.graph.nodes.get(e.b)!;
+          return { id: e.id, ax: a.x, ay: a.y, bx: b.x, by: b.y };
+        });
+        const near = nearestSegment(c.ax, c.ay, segs);
+        if (!near) continue;
+        const e = city.graph.edges.get(near.id)!;
+        const a = city.graph.nodes.get(e.a)!;
+        const b = city.graph.nodes.get(e.b)!;
+        c.edge = near.id;
+        c.p = near.t;
+        // 向きは、いまの車の向きに近い方 (一方通行なら、その向き)
+        c.dir = e.oneWay !== 0 ? e.oneWay : Math.cos(c.heading) * (b.x - a.x) + Math.sin(c.heading) * (b.y - a.y) >= 0 ? 1 : -1;
+        c.route = [];
+        this.planFrom(c, this.endNode(c));
+        kept.push(c);
+      }
+    }
     for (const [id, flow] of city.traffic.flow) {
       if (!city.graph.edges.has(id)) continue;
       const want = this.carScale <= 0 ? 0 : Math.round(Math.min(MAX_CARS_PER_EDGE, Math.max(1, Math.round(flow / FLOW_PER_CAR))) * this.carScale);
@@ -461,6 +511,8 @@ export class Traffic3D {
           dwell: 0,
           uturn: -1,
           braking: false,
+          ax: a.x + (b.x - a.x) * hash2(id, i, 4),
+          ay: a.y + (b.y - a.y) * hash2(id, i, 4),
         };
         this.planFrom(car, this.endNode(car));
         here.push(car);
