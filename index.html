@@ -165,7 +165,9 @@
         #panel:not(.open) > :nth-child(n+4):not(#speed) { display: none; }
         #panel:not(.open) > #speed { display: flex; }
         #toolbar { left: 8px; right: 8px; bottom: 8px; width: auto; max-width: none; flex-wrap: nowrap; overflow-x: auto; gap: 4px; padding-bottom: 2px; }
-        #toolbar button { padding: 7px 8px !important; font-size: 12px !important; flex: none; }
+        /* 右に続きがあることが分かるように、右端をうっすらぼかす (横にスクロールできる) */
+        #toolbar { padding-right: 26px; -webkit-mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent); mask-image: linear-gradient(to right, #000 calc(100% - 26px), transparent); }
+        #toolbar button { padding: 9px 9px !important; font-size: 14px !important; flex: none; min-height: 44px; }
         #toolbar kbd { display: none; }
         #zone-palette, #facility-palette, #loop-palette, #road-palette { left: 8px; right: 8px; bottom: calc(var(--tb, 54px) + 14px); transform: none; width: auto; max-width: none; flex-wrap: wrap; justify-content: center; font-size: 11px; }
         #zone-palette button, #facility-palette button, #loop-palette button { font-size: 11px; padding: 3px 6px; }
