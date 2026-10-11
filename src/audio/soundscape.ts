@@ -202,6 +202,7 @@ export class Soundscape {
 
   private scheduleBar(bar: Song["bars"][number], t: number, beat: number): void {
     const len = 4 * beat;
+    if (this.song.news) return this.newsBar(bar, t, beat);
     // 和音 (うすく伸ばす)
     for (const m of bar.chord) this.tone(midiHz(m), "triangle", t, len, 0.035, 0.08);
     // 低音 (1 拍目と 3 拍目)
@@ -214,6 +215,64 @@ export class Soundscape {
       this.tone(midiHz(m), this.song.radio ? "square" : "triangle", mt, b * beat, 0.05, 0.03);
       mt += b * beat;
     }
+  }
+
+  /** ニュース番組風の 1 小節: 和音を短く刻み、旋律は鋭いファンファーレ、ドラムが拍を刻む。 */
+  private newsBar(bar: Song["bars"][number], t: number, beat: number): void {
+    // 和音: 8 分で短く刻む (スタッカート)
+    for (let i = 0; i < 8; i++) for (const m of bar.chord) this.tone(midiHz(m), "square", t + i * beat / 2, beat / 2.5, 0.025, 0.02);
+    // 旋律: 鋭いのこぎり波
+    let mt = t;
+    for (const [m, b] of bar.melody) {
+      this.tone(midiHz(m), "sawtooth", mt, b * beat * 0.85, 0.06, 0.03);
+      mt += b * beat;
+    }
+    // ドラム: キック (1・3 拍)、スネア (2・4 拍)、ハイハット (8 分)
+    for (let i = 0; i < 4; i++) {
+      const bt = t + i * beat;
+      if (i % 2 === 0) this.kick(bt);
+      else this.snare(bt);
+    }
+    for (let i = 0; i < 8; i++) this.hat(t + i * beat / 2);
+  }
+
+  private kick(t: number): void {
+    const ctx = this.ctx!;
+    const osc = ctx.createOscillator();
+    osc.frequency.setValueAtTime(140, t);
+    osc.frequency.exponentialRampToValueAtTime(45, t + 0.12);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.5, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.16);
+    osc.connect(g);
+    g.connect(this.musicBus);
+    osc.start(t);
+    osc.stop(t + 0.17);
+  }
+
+  private snare(t: number): void {
+    this.noiseHit(t, 0.22, 1500, 0.09);
+  }
+
+  private hat(t: number): void {
+    this.noiseHit(t, 0.05, 7000, 0.035);
+  }
+
+  /** 雑音の短い一打 (スネア・ハイハット)。 */
+  private noiseHit(t: number, dur: number, highpass: number, level: number): void {
+    const ctx = this.ctx!;
+    const src = ctx.createBufferSource();
+    src.buffer = this.noise;
+    const hp = ctx.createBiquadFilter();
+    hp.type = "highpass";
+    hp.frequency.value = highpass;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(level, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + dur);
+    src.connect(hp);
+    hp.connect(g);
+    g.connect(this.musicBus);
+    src.start(t, Math.random(), dur + 0.02);
   }
 
   /** 1 つの音: 立ち上がりから消えるまで。out は BGM の音の出口。 */

@@ -14,6 +14,8 @@ export interface Song {
   bars: Bar[];
   /** 街のラジオ風に、少しこもった音で鳴らすか。 */
   radio: boolean;
+  /** ニュース番組のテーマ風: 短く鋭い音 (スタッカート) と、刻むドラム (キック・スネア・ハイハット)。 */
+  news?: boolean;
 }
 
 export const TITLE_SONG: Song = {
@@ -27,14 +29,16 @@ export const TITLE_SONG: Song = {
   ],
 };
 
+/** 街の BGM: ニュース番組のテーマ風。速いテンポで、短いファンファーレと、刻むリズム。 */
 export const CITY_SONG: Song = {
-  bpm: 76,
+  bpm: 124,
   radio: true,
+  news: true,
   bars: [
-    { chord: [45, 48, 52], melody: [[69, 2], [72, 2]] },
-    { chord: [41, 45, 48], melody: [[72, 1], [69, 1], [65, 2]] },
-    { chord: [48, 52, 55], melody: [[67, 2], [72, 2]] },
-    { chord: [43, 47, 50], melody: [[71, 4]] },
+    { chord: [48, 52, 55], melody: [[72, 1], [72, 1], [75, 1], [79, 1]] },
+    { chord: [43, 47, 50], melody: [[71, 1], [71, 1], [74, 1], [78, 1]] },
+    { chord: [45, 48, 52], melody: [[72, 1], [76, 1], [79, 1], [84, 1]] },
+    { chord: [41, 45, 48], melody: [[77, 2], [76, 1], [74, 1]] },
   ],
 };
 
