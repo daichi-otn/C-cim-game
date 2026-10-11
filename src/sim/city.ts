@@ -444,23 +444,26 @@ export class City {
    * 道路 (edgeId を含む、ひとつながりの区間) を type にアップグレード (または変更) するときの費用と、変わる区間の数。何も変えない。
    * 費用は、建設費の差額 (橋・トンネルは倍率つき)。安い種類への変更は無料で、返金もない。
    */
-  quoteUpgrade(edgeId: number, type: RoadType): { cost: number; sections: number; edges: number[] } {
-    const edges = this.graph.roadRun(edgeId).filter((id) => this.graph.edges.get(id)!.type !== type);
+  quoteUpgrade(edgeId: number, type: RoadType, laneCount = DEFAULT_LANE_COUNT): { cost: number; sections: number; edges: number[] } {
+    const edges = this.graph.roadRun(edgeId).filter((id) => {
+      const e = this.graph.edges.get(id)!;
+      return e.type !== type || e.laneCount !== laneCount;
+    });
     const trial: RoadChange = { built: [], changed: [] };
     for (const id of edges) {
       const e = this.graph.edges.get(id)!;
       const a = this.graph.nodes.get(e.a)!;
       const b = this.graph.nodes.get(e.b)!;
-      trial.changed.push({ length: Math.hypot(b.x - a.x, b.y - a.y), from: e.type, to: type, structure: e.structure, fromLanes: e.laneCount, toLanes: e.laneCount });
+      trial.changed.push({ length: Math.hypot(b.x - a.x, b.y - a.y), from: e.type, to: type, structure: e.structure, fromLanes: e.laneCount, toLanes: laneCount });
     }
     return { cost: City.changeCost(trial), sections: edges.length, edges };
   }
 
   /** 道路 (ひとつながりの区間) の種類を変えて、差額を払う。お金が足りない、または変わる区間がなければ false。 */
-  upgradeRoad(edgeId: number, type: RoadType): boolean {
-    const q = this.quoteUpgrade(edgeId, type);
+  upgradeRoad(edgeId: number, type: RoadType, laneCount = DEFAULT_LANE_COUNT): boolean {
+    const q = this.quoteUpgrade(edgeId, type, laneCount);
     if (q.sections === 0 || !this.canAfford(q.cost)) return false;
-    for (const id of q.edges) this.graph.retype(id, type);
+    for (const id of q.edges) this.graph.retype(id, type, laneCount);
     this.spend(q.cost);
     return true;
   }

@@ -36,7 +36,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.66.0";
+const VERSION = "0.67.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -1283,10 +1283,10 @@ async function main() {
         showTip("道路をクリックしてください", 2);
         return;
       }
-      const q = city.quoteUpgrade(e.id, roadType);
-      if (q.sections === 0) showTip(`${ROAD_SPECS[roadType].name}: すでにその種類です`, 2);
+      const q = city.quoteUpgrade(e.id, roadType, roadLaneCount);
+      if (q.sections === 0) showTip(`${ROAD_SPECS[roadType].name} ${roadLaneCount}車線: すでにその形です`, 2);
       else if (!city.canAfford(q.cost)) showTip("お金が足りません", 3);
-      else if (city.upgradeRoad(e.id, roadType)) showTip(`${ROAD_SPECS[roadType].name}に変えました (${q.cost.toLocaleString("ja-JP")} 円)`, 3);
+      else if (city.upgradeRoad(e.id, roadType, roadLaneCount)) showTip(`${ROAD_SPECS[roadType].name}に変えました (${q.cost.toLocaleString("ja-JP")} 円)`, 3);
     } else if (tool === "bulldoze") {
       // 施設の上なら施設を、そうでなければ近くの道路を取り壊す
       const f = city.facilityAt(Math.floor(t.x), Math.floor(t.y));
@@ -1847,10 +1847,10 @@ async function main() {
       if (!e) {
         world.roads.showEdges(null, 0);
       } else {
-        const key = `${e.id}|${roadType}|${graph.version}`;
+        const key = `${e.id}|${roadType}|${roadLaneCount}|${graph.version}`;
         if (key !== roadQuoteKey) {
           roadQuoteKey = key;
-          const q = city.quoteUpgrade(e.id, roadType);
+          const q = city.quoteUpgrade(e.id, roadType, roadLaneCount);
           upgradeEdges = q.edges;
           upgradeOk = q.sections > 0 && city.canAfford(q.cost);
           tipUntil = 0;

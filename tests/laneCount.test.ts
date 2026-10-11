@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { City } from "../src/sim/city";
 import { RoadGraph } from "../src/sim/roadGraph";
 import { DEFAULT_LANE_COUNT, RoadType, roadCapacity } from "../src/sim/roadTypes";
+import { setup } from "./helpers";
 
 describe("車線の数と容量", () => {
   it("車線が 2 倍になれば、容量も 2 倍 (既定の 2 車線が 1 倍)", () => {
@@ -36,5 +37,17 @@ describe("車線の数と容量", () => {
     const two = city.quotePath(pts, RoadType.Street, false, 0, 2).cost;
     const eight = city.quotePath(pts, RoadType.Street, false, 0, 8).cost;
     expect(eight).toBeCloseTo(two * 4, 6);
+  });
+  it("道路変更で、既にある道路の車線の数も変えられる (容量と費用が増える)", () => {
+    const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, false);
+    city.money = 1e12;
+    const e = [...city.graph.edges.values()].find((x) => x.a !== x.b && Math.abs(city.graph.nodes.get(x.a)!.y - (roadY + 0.5)) < 1e-6 && city.graph.nodes.get(x.a)!.x >= x0)!;
+    const q = city.quoteUpgrade(e.id, RoadType.Street, 6);
+    expect(q.sections).toBe(1);
+    expect(q.cost).toBeGreaterThan(0);
+    expect(city.upgradeRoad(e.id, RoadType.Street, 6)).toBe(true);
+    const after = city.graph.edges.get(e.id)!;
+    expect(after.laneCount).toBe(6);
+    expect(roadCapacity(RoadType.Street, false, 0, 6)).toBeGreaterThan(roadCapacity(RoadType.Street, false, 0, 2));
   });
 });

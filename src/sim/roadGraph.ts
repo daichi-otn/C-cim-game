@@ -309,13 +309,14 @@ export class RoadGraph {
    * 区間 id の種類を type に変える。変えた内容 (長さ・前後の種類・橋トンネルの別) を返す。同じ種類なら null。
    * 向き・曲線の番号・橋トンネルの別は変わらない。
    */
-  retype(edgeId: number, type: RoadType): { length: number; from: RoadType; to: RoadType; structure: Structure } | null {
+  retype(edgeId: number, type: RoadType, laneCount = DEFAULT_LANE_COUNT): { length: number; from: RoadType; to: RoadType; structure: Structure; fromLanes: number; toLanes: number } | null {
     const e = this.edges.get(edgeId);
-    if (!e || e.type === type) return null;
+    if (!e || (e.type === type && e.laneCount === laneCount)) return null;
     const a = this.nodes.get(e.a)!;
     const b = this.nodes.get(e.b)!;
-    const change = { length: Math.hypot(b.x - a.x, b.y - a.y), from: e.type, to: type, structure: e.structure };
+    const change = { length: Math.hypot(b.x - a.x, b.y - a.y), from: e.type, to: type, structure: e.structure, fromLanes: e.laneCount, toLanes: laneCount };
     e.type = type;
+    e.laneCount = laneCount;
     this.version++;
     return change;
   }
