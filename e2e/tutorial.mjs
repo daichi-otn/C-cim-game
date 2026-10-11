@@ -61,20 +61,7 @@ await page.click("#road-type-4");
 await click(380, 360);
 await click(780, 360);
 await page.keyboard.press("Escape");
-check("道路をアップグレードすると進む", await waitStep("住宅ゾーンを塗る"));
-
-// 住宅 (道路の南)、商業 (北)、工業 (南の東)
-await page.keyboard.press("4");
-await click(400, 380);
-await click(480, 420);
-check("住宅を塗ると進む", await waitStep("商業と工業を塗る"));
-await page.keyboard.press("5");
-await click(520, 300);
-await click(600, 340);
-await page.keyboard.press("6");
-await click(700, 380);
-await click(780, 420);
-check("商業と工業を塗ると進む", await waitStep("電気・水道・下水"));
+check("道路をアップグレードすると進む", await waitStep("電気・水道・下水"));
 
 // 施設: 発電所と下水処理場を建て、給水(水辺が必要)は飛ばす
 await page.keyboard.press("8");
@@ -88,7 +75,20 @@ await page.click("#tut-next");
 check("飛ばすと次の手順になる", await waitStep("外部接続"));
 await page.keyboard.press("-");
 await click(470, 326);
-check("外部接続を建てると進む", await waitStep("街が育つのを見る"));
+check("外部接続を建てると進む", await waitStep("住宅ゾーンを塗る"));
+
+// 住宅 (道路の南)、商業 (北)、工業 (南の東)
+await page.keyboard.press("4");
+await click(400, 380);
+await click(480, 420);
+check("住宅を塗ると進む", await waitStep("商業と工業を塗る"));
+await page.keyboard.press("5");
+await click(520, 300);
+await click(600, 340);
+await page.keyboard.press("6");
+await click(700, 380);
+await click(780, 420);
+check("商業と工業を塗ると進む", await waitStep("街が育つのを見る"));
 
 // 時間を動かす: 人口が 20 を超えるまで
 await page.click("#speed button[data-speed='4']");
@@ -99,7 +99,9 @@ await page.screenshot({ path: `${out}-1-grow.png` });
 const afterGrow = await title();
 if (afterGrow === "街が育つのを見る") await page.click("#tut-next"); // 住民が足りなくても、先へ進む
 await page.click("#speed button[data-speed='0']");
-check("需要と税率の手順になる", await waitStep("需要と税率"));
+check("画面の見方の手順になる", await waitStep("画面の見方"));
+await page.click("#tut-next");
+check("税率の手順になる", await waitStep("税率"));
 await page.click("#tax-up");
 check("税率を変えると進む", await waitStep("公共サービス"));
 await page.screenshot({ path: `${out}-2-services.png` });
