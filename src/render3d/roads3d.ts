@@ -1,7 +1,7 @@
 import * as THREE from "three";
 import { hash2 } from "../sim/rng";
 import type { RoadGraph, RoadNode } from "../sim/roadGraph";
-import { RoadType } from "../sim/roadTypes";
+import { LANE, RoadType } from "../sim/roadTypes";
 import { Structure } from "../sim/structures";
 import { GeoBuilder, orientedBox, ribbon, shade, wall } from "./geo";
 import { TILE, WATER_Z } from "./terrain3d";
@@ -89,6 +89,8 @@ function asphaltTexture(): THREE.CanvasTexture {
 interface Seg {
   structure: Structure;
   oneWay: number;
+  /** 車線の種類 (LANE のビット)。 */
+  lanes: number;
   a: RoadNode;
   b: RoadNode;
   ax: number;
@@ -183,7 +185,7 @@ export class Roads3D {
       const bx = b.x * TILE;
       const bz = b.y * TILE;
       const lift = (nid: number) => (e.structure === Structure.Bridge && (bridgeEnds.get(nid)?.other ?? 0) === 0 ? 1 : 0);
-      return { structure: e.structure, oneWay: e.oneWay, a, b, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), type: e.type, liftA: lift(e.a), liftB: lift(e.b) };
+      return { structure: e.structure, oneWay: e.oneWay, lanes: e.lanes, a, b, ax, az, bx, bz, len: Math.hypot(bx - ax, bz - az), type: e.type, liftA: lift(e.a), liftB: lift(e.b) };
     });
     this.edgeInfo.clear();
     [...edges.values()].forEach((e, i) => this.edgeInfo.set(e.id, { structure: all[i]!.structure, len: all[i]!.len, liftA: all[i]!.liftA, liftB: all[i]!.liftB }));
@@ -206,6 +208,13 @@ export class Roads3D {
     };
     const steps = (sg: Seg) => (sg.structure === Structure.Bridge ? Math.max(2, Math.ceil(sg.len / 6)) : 1);
     /** 道路の区間を、幅 w・高さ yBase の帯として (橋なら段々に高さを変えて) 描く。 */
+    /** 道路の中心線から、進行方向の左へ off ずらした帯 (車線の色)。 */
+    const bandOff = (b: GeoBuilder, sg: Seg, off: number, w: number, yBase: number, color: number) => {
+      const nx = (-(sg.bz - sg.az) / sg.len) * off;
+      const nz = ((sg.bx - sg.ax) / sg.len) * off;
+      const shifted: Seg = { ...sg, ax: sg.ax + nx, az: sg.az + nz, bx: sg.bx + nx, bz: sg.bz + nz };
+      band(b, shifted, w, yBase, color);
+    };
     const band = (b: GeoBuilder, sg: Seg, w: number, yBase: number, color: number) => {
       const n = steps(sg);
       for (let i = 0; i < n; i++) {
@@ -283,6 +292,20 @@ export class Roads3D {
         g.disc(n.x, n.z, (st.road + 1.2) / 2, n.y + Y_ROAD + r, st.curb, 12);
         surface.disc(n.x, n.z, st.road / 2, n.y + Y_ROAD + r + 0.005, color, 12);
       }
+    }
+    // 車線: 中央分離帯・路上駐車・バス専用・自転車レーンを、路面の上に色の帯で描く
+    for (const sg of all) {
+      if (sg.lanes === 0) continue;
+      const st = STYLES[sg.type];
+      const half = st.road / 2;
+      const side = (off: number, w: number, color: number) => bandOff(g, sg, off, w, Y_ROAD + 0.02, color);
+      if (sg.lanes & LANE.Median) side(0, 1.4, 0x9aa890);
+      if (sg.lanes & LANE.Parking) {
+        side(half - 1.6, 2.6, 0x5b5f66);
+        side(-(half - 1.6), 2.6, 0x5b5f66);
+      }
+      if (sg.lanes & LANE.Bus) side(half - 4.4, 2.6, 0xb8362b);
+      if (sg.lanes & LANE.Bike) side(half - 7.4, 2.4, 0x2e9e5b);
     }
     // 路地の石畳、歩行者道の砂利のつぶ
     for (const t of types) {

@@ -24,6 +24,7 @@ check("手順の番号が出る", (await count()).startsWith("1 / "), await coun
 
 await page.click("#tut-next");
 check("次へで進む", await waitStep("画面を動かす"));
+check("説明の枠と矢印は、指す部品がないときは出ない", !(await page.isVisible("#tut-arrows")) && (await page.locator(".tut-frame:visible").count()) === 0);
 
 // 画面を動かす + ズーム
 await page.mouse.move(900, 500);
@@ -41,6 +42,10 @@ await page.mouse.wheel(0, 100);
 await page.waitForTimeout(100);
 await page.mouse.wheel(0, -100); // 少しだけ縮小した倍率にする
 check("画面を動かしてズームすると自動で進む", await waitStep("道路を引く"));
+await page.waitForTimeout(600); // 枠と矢印が動き終わるまで待つ
+check("道路の手順では、道路ボタンを囲む枠と矢印が出る", (await page.locator(".tut-frame:visible").count()) === 1 && (await page.evaluate(() => [...document.querySelectorAll("#tut-arrows line")].some((l) => l.style.display !== "none"))));
+const frame = await page.evaluate(() => { const f = document.querySelector(".tut-frame:not(.hidden)").getBoundingClientRect(); const b = document.getElementById("tool-road").getBoundingClientRect(); return { fx: f.left + f.width / 2, bx: b.left + b.width / 2 }; });
+check("枠は道路ボタンの真ん中に重なる", Math.abs(frame.fx - frame.bx) < 12, JSON.stringify(frame));
 check("道路ボタンが強調される", await page.evaluate(() => document.getElementById("tool-road").classList.contains("hint")));
 
 // 道路 (画面中央を横切る 25 タイルほど)

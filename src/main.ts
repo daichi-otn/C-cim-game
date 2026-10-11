@@ -6,6 +6,7 @@ import { SEASON_NAMES, WEATHER_NAMES } from "./sim/weather";
 import { DAY_MODE_NAMES, DayClock, START_HOUR, formatHour } from "./render/lighting";
 import { drawMapPreview } from "./render/mapPreview";
 import { City, type RoadQuote } from "./sim/city";
+import { LANE } from "./sim/roadTypes";
 import { DISTRICT_COLORS, GREENERY_NAMES, type Greenery } from "./sim/district";
 import { ACTION_DEFS, DEFAULT_KEYMAP, KEY_GROUP_NAMES, KEYMAP_STORAGE_KEY, actionFor, bindKey, keyLabel, parseKeymap, resolveKeyTokens, type ActionId, type KeyGroup, type Keymap } from "./keymap";
 import { type CameraBindings } from "./render3d/keyCamera";
@@ -32,7 +33,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.49.9";
+const VERSION = "0.53.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -360,6 +361,7 @@ async function main() {
   palette.querySelector(`[data-road="${roadType}"]`)?.classList.add("active");
   // 一方通行: 始点から終点への向きに敷く
   let roadOneWay = false;
+  const LANE_BITS = LANE;
   const oneWayBtn = document.createElement("button");
   oneWayBtn.id = "road-oneway";
   oneWayBtn.className = "oneway";
@@ -372,6 +374,20 @@ async function main() {
   };
   oneWayBtn.addEventListener("click", () => setOneWay(!roadOneWay));
   palette.append(oneWayBtn);
+  // 車線: 中央分離帯・路上駐車・バス専用・自転車レーンを、組み合わせて敷ける (ボタンを押すとオン・オフ)
+  let roadLanes = 0;
+  for (const [bit, label] of [[LANE_BITS.Median, "中央分離帯"], [LANE_BITS.Parking, "路上駐車"], [LANE_BITS.Bus, "バス専用"], [LANE_BITS.Bike, "自転車"]] as const) {
+    const btn = document.createElement("button");
+    btn.className = "oneway";
+    btn.id = `road-lane-${bit}`;
+    btn.textContent = label;
+    btn.addEventListener("click", () => {
+      roadLanes ^= bit;
+      btn.classList.toggle("active", (roadLanes & bit) !== 0);
+      roadQuoteKey = "";
+    });
+    palette.append(btn);
+  }
   // 曲線: 始点 → 制御点 → 終点の 3 クリックで敷く
   let roadCurve = false;
   let roadControl: { x: number; y: number } | null = null;
@@ -508,13 +524,128 @@ async function main() {
     for (const el of hintTargets) el.classList.remove("hint");
     hintTargets.clear();
   }
+  // 説明の枠 (対象の部品を囲む) と、説明から対象へ向かう矢印。画面の動きに合わせて、毎フレーム置き直す
+  const TUT_SLOTS = 4;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const tutFrames = Array.from({ length: TUT_SLOTS }, () => {
+    const d = document.createElement("div");
+    d.className = "tut-frame hidden";
+    document.body.append(d);
+    return d;
+  });
+  const tutSvg = document.createElementNS(SVG_NS, "svg");
+  tutSvg.id = "tut-arrows";
+  tutSvg.classList.add("hidden");
+  tutSvg.setAttribute("aria-hidden", "true");
+  tutSvg.innerHTML = '<defs><marker id="tut-head" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#ffd54a"/></marker></defs>';
+  const tutLines = Array.from({ length: TUT_SLOTS }, () => {
+    const l = document.createElementNS(SVG_NS, "line");
+    l.setAttribute("marker-end", "url(#tut-head)");
+    l.style.display = "none";
+    tutSvg.append(l);
+    return l;
+  });
+  document.body.append(tutSvg);
+  let tutRaf = 0;
+  /** いまの手順が指す部品 (CSS セレクタ)。 */
+  let tutSelectors: string[] = [];
+  const TUT_GAP = 40;
+  const TUT_MARGIN = 8;
+  function hideTutorialOverlay() {
+    for (const f of tutFrames) f.classList.add("hidden");
+    tutSvg.classList.add("hidden");
+  }
+  /** 対象の部品の場所に合わせて、枠・説明パネル・矢印を置く。 */
+  function layoutTutorial() {
+    const targets: DOMRect[] = [];
+    for (const sel of tutSelectors) for (const el of document.querySelectorAll(sel)) {
+      const r = el.getBoundingClientRect();
+      // 隠れている部品 (大きさ 0) は指さない
+      if (r.width > 0 && r.height > 0) targets.push(r);
+    }
+    const n = Math.min(targets.length, TUT_SLOTS);
+    tutFrames.forEach((f, i) => {
+      const r = targets[i];
+      f.classList.toggle("hidden", !r || i >= n);
+      if (!r || i >= n) return;
+      f.style.left = `${r.left - 6}px`;
+      f.style.top = `${r.top - 6}px`;
+      f.style.width = `${r.width + 12}px`;
+      f.style.height = `${r.height + 12}px`;
+    });
+    // 説明パネルは、対象のとなりに置く。対象・ツールバー・右上のパネルには重ねない。
+    // 対象が画面の下half なら上、上half なら下を、先に試す
+    const w = Math.min(330, innerWidth - 16);
+    const h = tutEl.offsetHeight;
+    let left = TUT_MARGIN;
+    let top = 44;
+    if (n > 0) {
+      const l = Math.min(...targets.map((r) => r.left));
+      const t = Math.min(...targets.map((r) => r.top));
+      const rt = Math.max(...targets.map((r) => r.right));
+      const b = Math.max(...targets.map((r) => r.bottom));
+      const cx = (l + rt) / 2;
+      const clampX = (x: number) => Math.max(TUT_MARGIN, Math.min(x, innerWidth - w - TUT_MARGIN));
+      const clampY = (y: number) => Math.max(TUT_MARGIN, Math.min(y, innerHeight - h - TUT_MARGIN));
+      const above: [number, number] = [clampX(cx - w / 2), t - TUT_GAP - h];
+      const below: [number, number] = [clampX(cx - w / 2), b + TUT_GAP];
+      const right: [number, number] = [rt + TUT_GAP, clampY(t)];
+      const leftSpot: [number, number] = [l - TUT_GAP - w, clampY(t)];
+      const order = (b + t) / 2 > innerHeight / 2 ? [above, leftSpot, right, below] : [below, right, leftSpot, above];
+      const obstacles = [...targets, ...["#toolbar", "#panel"].flatMap((sel) => [...document.querySelectorAll(sel)].map((el) => el.getBoundingClientRect())).filter((r) => r.width > 0)];
+      const inside = ([x, y]: [number, number]) => x >= TUT_MARGIN && x + w <= innerWidth - TUT_MARGIN && y >= TUT_MARGIN && y + h <= innerHeight - TUT_MARGIN;
+      const clear = ([x, y]: [number, number]) => obstacles.every((o) => x + w <= o.left + 4 || x >= o.right - 4 || y + h <= o.top + 4 || y >= o.bottom - 4);
+      [left, top] = order.find((p) => inside(p) && clear(p)) ?? order.find(inside) ?? order[0]!;
+    }
+    tutEl.style.left = `${left}px`;
+    tutEl.style.top = `${top}px`;
+    // 矢印: パネルの一番近い点から、対象の一番近い点へ
+    const pl = left, pt = top, pr = left + w, pb = top + h;
+    tutLines.forEach((line, i) => {
+      const r = targets[i];
+      if (!r || i >= n) {
+        line.style.display = "none";
+        return;
+      }
+      const cx = (r.left + r.right) / 2;
+      const cy = (r.top + r.bottom) / 2;
+      const sx = Math.max(pl, Math.min(cx, pr));
+      const sy = Math.max(pt, Math.min(cy, pb));
+      const ex = Math.max(r.left, Math.min(sx, r.right));
+      const ey = Math.max(r.top, Math.min(sy, r.bottom));
+      if (Math.hypot(ex - sx, ey - sy) < 12) {
+        line.style.display = "none";
+        return;
+      }
+      line.setAttribute("x1", `${sx}`);
+      line.setAttribute("y1", `${sy}`);
+      line.setAttribute("x2", `${ex}`);
+      line.setAttribute("y2", `${ey}`);
+      line.style.display = "";
+    });
+    tutSvg.classList.toggle("hidden", n === 0);
+  }
+  function tutTick() {
+    tutRaf = 0;
+    if (!tutorial) return;
+    layoutTutorial();
+    tutRaf = requestAnimationFrame(tutTick);
+  }
   function startTutorial(on: boolean) {
     clearHints();
     tutorial = on ? new Tutorial() : null;
     tutShownKey = "";
+    tutSelectors = [];
     menuSeen = false;
     tutStart = { x: camera.x, y: camera.y, zoom: camera.zoom };
     tutEl.classList.toggle("hidden", !on);
+    if (on) {
+      if (!tutRaf) tutRaf = requestAnimationFrame(tutTick);
+    } else {
+      cancelAnimationFrame(tutRaf);
+      tutRaf = 0;
+      hideTutorialOverlay();
+    }
   }
   function endTutorial(completed: boolean) {
     if (completed) {
@@ -560,6 +691,7 @@ async function main() {
     $("tut-next").textContent = t.isLast ? "終了" : s.check ? "この手順を飛ばす" : "次へ";
     $("tut-next").classList.toggle("primary", !s.check || t.isLast);
     clearHints();
+    tutSelectors = s.highlight;
     for (const sel of s.highlight) for (const el of document.querySelectorAll(sel)) {
       el.classList.add("hint");
       hintTargets.add(el);
@@ -1082,11 +1214,11 @@ async function main() {
       }
       const pts = roadCurve && roadControl ? curvePoints(roadStart, roadControl, p) : [roadStart, p];
       // 敷けない (水や山が長すぎる等)・お金が足りないときは敷けない (始点はそのまま)
-      if (city.buildPath(pts, roadType, roadOneWay)) {
+      if (city.buildPath(pts, roadType, roadOneWay, roadLanes)) {
         roadStart = p; // 続けて引ける
         roadControl = null;
       } else {
-        const q = city.quotePath(pts, roadType, roadOneWay);
+        const q = city.quotePath(pts, roadType, roadOneWay, roadLanes);
         if (!q.ok) showTip(q.reason ?? "ここには敷けません", 3);
         else if (!city.canAfford(q.cost)) showTip("お金が足りません", 3);
       }
@@ -1163,6 +1295,24 @@ async function main() {
     }
   }
 
+  // ドラッグで作る: 道路・四角い道路・区画・地区は、押した点から離した点までをまとめて作れる。
+  // クリック 2 回 (1 回目が始点、2 回目が終点) も、そのまま使える
+  let dragArmed = false;
+  const canDragBuild = () => (tool === "road" ? !roadCurve : tool === "loop" || tool === "district" || tool in ZONE_TOOLS);
+  const hasPendingStart = () =>
+    tool === "road" ? roadStart !== null : tool === "loop" ? loopStart !== null : tool === "district" ? districtStart !== null : zoneStart !== null;
+  /** 押した点を始点にする (ドラッグが始まったとき)。途中だった始点は捨てる。 */
+  function armDrag() {
+    roadStart = zoneStart = loopStart = districtStart = roadControl = null;
+    dragArmed = true;
+    onClick(downAt.x, downAt.y);
+  }
+  /** 離した点を終点にして、作る。始点が置けなかった (水の上など) ときは何もしない。 */
+  function finishDrag(x: number, y: number) {
+    dragArmed = false;
+    if (hasPendingStart()) onClick(x, y);
+  }
+
   // 入力: 5px 以内ならクリック、それ以上動かしたらドラッグ (地図の移動)
   let pressed = false;
   let moved = false;
@@ -1225,6 +1375,7 @@ async function main() {
       }
       if (!pressed) return;
       if (!moved && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > DRAG_THRESHOLD_PX) moved = true;
+      if (moved && !dragArmed && canDragBuild()) armDrag();
       if (moved && tool === "pan") camera.panByScreen(e.clientX - last.x, e.clientY - last.y);
       last = { x: e.clientX, y: e.clientY };
       return;
@@ -1232,12 +1383,13 @@ async function main() {
     cursor = toTile(e.clientX, e.clientY);
     if (!pressed) return;
     if (!moved && Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y) > DRAG_THRESHOLD_PX) moved = true;
+    if (moved && !orbiting && !dragArmed && canDragBuild()) armDrag();
     if (moved) {
       if (orbiting) {
         // 画面の中心の地面の点を軸に回す。下へ引くと、より真上から見る
         camera.yaw += (e.clientX - last.x) * ORBIT_YAW_PER_PX;
         camera.tilt((e.clientY - last.y) * ORBIT_PITCH_PER_PX);
-      } else {
+      } else if (!dragArmed) {
         camera.panByScreen(e.clientX - last.x, e.clientY - last.y);
       }
       last = { x: e.clientX, y: e.clientY };
@@ -1249,11 +1401,13 @@ async function main() {
       if (touchPts.size < 2) pinch = null;
       if (!pressed) return;
       pressed = false;
+      if (dragArmed) return finishDrag(e.clientX, e.clientY);
       if (!moved && touchPts.size === 0) onClick(e.clientX, e.clientY);
       return;
     }
     if (!pressed) return;
     pressed = false;
+    if (dragArmed) return finishDrag(e.clientX, e.clientY);
     if (!moved && !orbiting) onClick(e.clientX, e.clientY);
     else if (!moved && e.button === 2) roadStart = zoneStart = roadControl = loopStart = null; // 右クリックで道路の始点などをキャンセル
   });
@@ -1261,6 +1415,7 @@ async function main() {
     touchPts.delete(e.pointerId);
     if (touchPts.size < 2) pinch = null;
     pressed = false;
+    dragArmed = false;
   });
   world.canvas.style.touchAction = "none"; // ブラウザの拡大・スクロールに取られないように
   world.canvas.addEventListener("pointerleave", () => (cursor = null));
@@ -1583,10 +1738,10 @@ async function main() {
         const pts = curved ? curvePoints(roadStart, roadControl!, p) : [roadStart, p];
         // 見積もりは、カーソルや道路が変わったときだけ求め直す (曲線で制御点を待っている間は、直線で見積もる)
         const waiting = roadCurve && !roadControl;
-        const qk = `${roadStart.x},${roadStart.y}|${roadControl?.x},${roadControl?.y}|${p.x},${p.y}|${roadType}|${roadOneWay}|${graph.version}`;
+        const qk = `${roadStart.x},${roadStart.y}|${roadControl?.x},${roadControl?.y}|${p.x},${p.y}|${roadType}|${roadOneWay}|${roadLanes}|${graph.version}`;
         if (qk !== roadQuoteKey) {
           roadQuoteKey = qk;
-          roadQuote = city.quotePath(pts, roadType, roadOneWay);
+          roadQuote = city.quotePath(pts, roadType, roadOneWay, roadLanes);
           const q = roadQuote;
           const extra = [q.bridge > 0 ? `${STRUCTURE_SPECS[Structure.Bridge].name} ${Math.round(q.bridge)} タイル` : "", q.tunnel > 0 ? `${STRUCTURE_SPECS[Structure.Tunnel].name} ${Math.round(q.tunnel)} タイル` : ""].filter(Boolean).join("・");
           tipUntil = 0;

@@ -390,7 +390,7 @@ export class City {
    * 折れ線 (2 点なら 1 本の直線、3 点以上なら曲線を細かく分けたもの) の道路を敷いたときの費用などを見積もる。何も変えない。
    * 水の上は橋、山の下はトンネルになる (長さの上限あり)。敷けない場合は ok: false と理由を返す。お金が足りるかは見ない。
    */
-  quotePath(pts: readonly { x: number; y: number }[], type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false): RoadQuote {
+  quotePath(pts: readonly { x: number; y: number }[], type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false, lanes = 0): RoadQuote {
     const plan = planPath(this.seed, pts);
     if (!plan.ok) return { ok: false, reason: plan.reason, cost: 0, sections: 0, bridge: 0, tunnel: 0 };
     const trial = RoadGraph.fromData(this.graph.toData());
@@ -404,7 +404,7 @@ export class City {
         if (!chainOfRun.has(piece.run)) chainOfRun.set(piece.run, trial.newChain());
         chain = chainOfRun.get(piece.run)!;
       }
-      sections += trial.addRoad(piece.a.x, piece.a.y, piece.b.x, piece.b.y, type, oneWay, chain, piece.structure);
+      sections += trial.addRoad(piece.a.x, piece.a.y, piece.b.x, piece.b.y, type, oneWay, chain, piece.structure, lanes);
       cost += City.changeCost(trial.lastChange);
     }
     if (trial.structureJunction()) return { ok: false, reason: "橋やトンネルの途中では、ほかの道路と交差できません", cost: 0, sections: 0, bridge: 0, tunnel: 0 };
@@ -421,8 +421,8 @@ export class City {
    * 3 点以上 (曲線) は一続きの曲線として扱い、撤去のときに一緒に消える。橋・トンネルは、その区間だけがまとまりで消える。
    * 費用は実際に変わった区間だけで決まる (同じ種類の既存の道路と重なる部分は払わない。重なった部分の種類や一方通行の向きが違えば、その通りに変わる。向きだけの変更は無料)。
    */
-  buildPath(pts: readonly { x: number; y: number }[], type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false): boolean {
-    const quote = this.quotePath(pts, type, oneWay);
+  buildPath(pts: readonly { x: number; y: number }[], type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false, lanes = 0): boolean {
+    const quote = this.quotePath(pts, type, oneWay, lanes);
     if (!quote.ok || quote.sections === 0 || !this.canAfford(quote.cost)) return false;
     const plan = planPath(this.seed, pts);
     if (!plan.ok) return false;
@@ -434,7 +434,7 @@ export class City {
         if (!chainOfRun.has(piece.run)) chainOfRun.set(piece.run, this.graph.newChain());
         chain = chainOfRun.get(piece.run)!;
       }
-      this.graph.addRoad(piece.a.x, piece.a.y, piece.b.x, piece.b.y, type, oneWay, chain, piece.structure);
+      this.graph.addRoad(piece.a.x, piece.a.y, piece.b.x, piece.b.y, type, oneWay, chain, piece.structure, lanes);
     }
     this.spend(quote.cost);
     return true;

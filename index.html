@@ -82,7 +82,7 @@
              font: 13px sans-serif; background: rgba(0,0,0,.7); padding: 5px 12px; border-radius: 6px; pointer-events: none; }
       #notices { color: #ff8a80; font-size: 12px; white-space: pre-line; line-height: 1.4; margin-top: 4px; }
       .hidden { display: none !important; }
-      #tutorial { position: fixed; top: 44px; left: 8px; width: 330px; z-index: 6; color: #fff; font: 13px/1.6 sans-serif; background: rgba(24,30,36,.94);
+      #tutorial { position: fixed; top: 44px; left: 8px; width: min(330px, calc(100vw - 16px)); z-index: 6; color: #fff; font: 13px/1.6 sans-serif; background: rgba(24,30,36,.94);
                   border: 2px solid #7bd88f; border-radius: 10px; padding: 12px 14px; box-shadow: 0 4px 16px rgba(0,0,0,.4); }
       #tutorial .head { display: flex; justify-content: space-between; align-items: baseline; }
       #tutorial h3 { margin: 0; font-size: 16px; }
@@ -95,6 +95,20 @@
       #tutorial .actions .btn { font-size: 12px; padding: 4px 9px; }
       @keyframes hint-pulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(123,216,143,.9); } 50% { box-shadow: 0 0 0 5px rgba(123,216,143,0); } }
       .hint { outline: 2px solid #7bd88f; animation: hint-pulse 1.2s infinite; position: relative; z-index: 3; }
+      /* チュートリアルの枠と矢印。枠は対象の部品に合わせて、なめらかに動く */
+      /* 説明の文は、地図のクリックを通す。押すのはボタンだけ */
+      #tutorial { transition: left .45s ease, top .45s ease; pointer-events: none; }
+      #tutorial .btn { pointer-events: auto; }
+      .tut-frame { position: fixed; pointer-events: none; z-index: 5; border: 3px solid #ffd54a; border-radius: 8px; box-shadow: 0 0 0 2px rgba(0,0,0,.35);
+                   transition: left .45s ease, top .45s ease, width .45s ease, height .45s ease; animation: tut-pulse 1.2s infinite; }
+      @keyframes tut-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
+      #tut-arrows { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
+      #tut-arrows line { stroke: #ffd54a; stroke-width: 3; stroke-linecap: round; }
+      /* 指で押す端末: ボタンを、指で押しやすい大きさ (44px 以上) にする */
+      @media (pointer: coarse) {
+        #toolbar button, #speed button, #road-palette button, #tutorial .btn, .btn { min-height: 44px; min-width: 44px; }
+        #road-palette button { padding: 6px 10px; }
+      }
       .overlay { position: fixed; inset: 0; z-index: 10; background: radial-gradient(ellipse at 50% 30%, #2a3a4c 0%, #151b23 60%, #0e1115 100%); overflow: auto;
                  display: flex; justify-content: center; align-items: flex-start; padding: 24px 16px; box-sizing: border-box;
                  color: #fff; font: 14px/1.5 sans-serif; }

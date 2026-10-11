@@ -16,6 +16,8 @@ export interface RoadEdge {
   chain: number;
   /** 橋・トンネルか。 */
   structure: Structure;
+  /** 車線の種類 (LANE のビットの組み合わせ)。0 = 普通の道路。 */
+  lanes: number;
 }
 
 export type OneWay = 0 | 1 | -1;
@@ -77,7 +79,7 @@ function intersect(
 export interface RoadGraphData {
   nextId: number;
   nodes: [number, number, number][];
-  edges: [number, number, number, number?, number?, number?, number?][];
+  edges: [number, number, number, number?, number?, number?, number?, number?][];
 }
 
 export class RoadGraph {
@@ -99,7 +101,7 @@ export class RoadGraph {
    * 既存の道路と重なった部分は、type が違えばその種類に変わる (アップグレード・ダウングレード)。
    * oneWay なら、始点 (ax,ay) から終点 (bx,by) へ向かう一方通行になる。重なった部分も、向きがその通りに変わる。
    */
-  addRoad(ax: number, ay: number, bx: number, by: number, type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false, chain = 0, structure: Structure = Structure.None): number {
+  addRoad(ax: number, ay: number, bx: number, by: number, type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false, chain = 0, structure: Structure = Structure.None, lanes = 0): number {
     this.lastChange = { built: [], changed: [] };
     if (Math.hypot(bx - ax, by - ay) < EPS) return 0;
 
@@ -143,7 +145,7 @@ export class RoadGraph {
       const length = Math.hypot(nb.x - na.x, nb.y - na.y);
       const existing = this.edgeByPair.get(pairKey(a, b));
       if (existing === undefined) {
-        if (this.addEdgeRaw(a, b, type, oneWay ? 1 : 0, chain, structure)) {
+        if (this.addEdgeRaw(a, b, type, oneWay ? 1 : 0, chain, structure, lanes)) {
           this.lastChange.built.push({ length, type, structure });
           changes++;
         }
@@ -151,10 +153,11 @@ export class RoadGraph {
         const e = this.edges.get(existing)!;
         // 描いた向き (a → b) が、既存の区間の向きと同じなら 1、逆なら -1
         const want: OneWay = oneWay ? (e.a === a ? 1 : -1) : 0;
-        if (e.type !== type || e.oneWay !== want) {
+        if (e.type !== type || e.oneWay !== want || e.lanes !== lanes) {
           this.lastChange.changed.push({ length, from: e.type, to: type, structure: e.structure });
           e.type = type;
           e.oneWay = want;
+          e.lanes = lanes;
           this.version++;
           changes++;
         }
@@ -168,7 +171,7 @@ export class RoadGraph {
     return {
       nextId: this.nextId,
       nodes: [...this.nodes.values()].map((n) => [n.id, n.x, n.y]),
-      edges: [...this.edges.values()].map((e) => [e.id, e.a, e.b, e.type, e.oneWay, e.chain, e.structure]),
+      edges: [...this.edges.values()].map((e) => [e.id, e.a, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes]),
     };
   }
 
@@ -185,7 +188,7 @@ export class RoadGraph {
       g.adj.set(id, new Set());
       maxId = Math.max(maxId, id);
     }
-    for (const [id, a, b, rawType, rawOneWay, rawChain, rawStructure] of d.edges) {
+    for (const [id, a, b, rawType, rawOneWay, rawChain, rawStructure, rawLanes] of d.edges) {
       const structure = rawStructure === undefined ? Structure.None : rawStructure;
       if (!isStructure(structure)) throw new Error("橋・トンネルの種類が不正です");
       const chain = rawChain === undefined ? 0 : rawChain;
@@ -197,7 +200,9 @@ export class RoadGraph {
       if (!Number.isInteger(id) || id < 1 || !g.nodes.has(a) || !g.nodes.has(b) || a === b) throw new Error("道路のエッジが不正です");
       const pair = pairKey(a, b);
       if (g.edges.has(id) || g.edgeByPair.has(pair)) throw new Error("道路のエッジが重複しています");
-      g.edges.set(id, { id, a, b, type, oneWay, chain, structure });
+      const lanes = rawLanes === undefined ? 0 : rawLanes;
+      if (!Number.isInteger(lanes) || lanes < 0 || lanes > 15) throw new Error("車線の種類が不正です");
+      g.edges.set(id, { id, a, b, type, oneWay, chain, structure, lanes });
       g.edgeByPair.set(pair, id);
       g.adj.get(a)!.add(id);
       g.adj.get(b)!.add(id);
@@ -244,7 +249,7 @@ export class RoadGraph {
       const na = this.nodes.get(e.a)!;
       const nb = this.nodes.get(e.b)!;
       if (projectOnSegment(x, y, na.x, na.y, nb.x, nb.y).dist > maxDist) continue;
-      best = Math.max(best, roadCapacity(e.type, e.oneWay !== 0));
+      best = Math.max(best, roadCapacity(e.type, e.oneWay !== 0, e.lanes));
     }
     return best;
   }
@@ -274,7 +279,7 @@ export class RoadGraph {
         let bestCos = -2;
         for (const id of this.adj.get(next) ?? []) {
           const c = this.edges.get(id)!;
-          if (run.has(c.id) || c.type !== e.type || c.structure !== e.structure || (c.oneWay === 0) !== (e.oneWay === 0)) continue;
+          if (run.has(c.id) || c.type !== e.type || c.structure !== e.structure || (c.oneWay === 0) !== (e.oneWay === 0) || c.lanes !== e.lanes) continue;
           const d = dirOut(c, next);
           const cos = heading.x * d.x + heading.y * d.y;
           const sameCurve = c.chain !== 0 && c.chain === e.chain;
@@ -435,11 +440,11 @@ export class RoadGraph {
   }
 
   /** エッジを追加する。自己ループや重複なら何もせず false。 */
-  private addEdgeRaw(a: number, b: number, type: RoadType, oneWay: OneWay = 0, chain = 0, structure: Structure = Structure.None): boolean {
+  private addEdgeRaw(a: number, b: number, type: RoadType, oneWay: OneWay = 0, chain = 0, structure: Structure = Structure.None, lanes = 0): boolean {
     if (a === b) return false;
     const key = pairKey(a, b);
     if (this.edgeByPair.has(key)) return false;
-    const edge: RoadEdge = { id: this.nextId++, a, b, type, oneWay, chain, structure };
+    const edge: RoadEdge = { id: this.nextId++, a, b, type, oneWay, chain, structure, lanes };
     this.edges.set(edge.id, edge);
     this.edgeByPair.set(key, edge.id);
     this.adj.get(a)!.add(edge.id);
@@ -451,8 +456,8 @@ export class RoadGraph {
   private splitEdge(e: RoadEdge, n: RoadNode): void {
     if (n.id === e.a || n.id === e.b) return;
     this.deleteEdge(e);
-    this.addEdgeRaw(e.a, n.id, e.type, e.oneWay, e.chain, e.structure);
-    this.addEdgeRaw(n.id, e.b, e.type, e.oneWay, e.chain, e.structure);
+    this.addEdgeRaw(e.a, n.id, e.type, e.oneWay, e.chain, e.structure, e.lanes);
+    this.addEdgeRaw(n.id, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes);
   }
 
   private deleteEdge(e: RoadEdge): void {
