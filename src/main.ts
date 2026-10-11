@@ -6,7 +6,7 @@ import { SEASON_NAMES, WEATHER_NAMES } from "./sim/weather";
 import { DAY_MODE_NAMES, DayClock, START_HOUR, formatHour } from "./render/lighting";
 import { drawMapPreview } from "./render/mapPreview";
 import { City, type RoadQuote } from "./sim/city";
-import { LANE } from "./sim/roadTypes";
+import { DEFAULT_LANE_COUNT, LANE, MAX_LANE_COUNT, MIN_LANE_COUNT } from "./sim/roadTypes";
 import { DISTRICT_COLORS, GREENERY_NAMES, type Greenery } from "./sim/district";
 import { ACTION_DEFS, DEFAULT_KEYMAP, KEY_GROUP_NAMES, KEYMAP_STORAGE_KEY, actionFor, bindKey, keyLabel, parseKeymap, resolveKeyTokens, type ActionId, type KeyGroup, type Keymap } from "./keymap";
 import { type CameraBindings } from "./render3d/keyCamera";
@@ -36,7 +36,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.63.0";
+const VERSION = "0.64.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -385,6 +385,7 @@ async function main() {
   palette.append(oneWayBtn);
   // 車線: 中央分離帯・路上駐車・バス専用・自転車レーンを、組み合わせて敷ける (ボタンを押すとオン・オフ)
   let roadLanes = 0;
+  let roadLaneCount = DEFAULT_LANE_COUNT;
   for (const [bit, label] of [[LANE_BITS.Median, "中央分離帯"], [LANE_BITS.Parking, "路上駐車"], [LANE_BITS.Bus, "バス専用"], [LANE_BITS.Bike, "自転車"]] as const) {
     const btn = document.createElement("button");
     btn.className = "oneway";
@@ -397,6 +398,25 @@ async function main() {
     });
     palette.append(btn);
   }
+  // 車線の数 (両方向の合計・2〜20)。多いほど車がたくさん流れるが、建設費も増える
+  const laneWrap = document.createElement("label");
+  laneWrap.id = "road-lane-count";
+  const laneLabel = document.createElement("span");
+  const laneSlider = document.createElement("input");
+  laneSlider.type = "range";
+  laneSlider.min = String(MIN_LANE_COUNT);
+  laneSlider.max = String(MAX_LANE_COUNT);
+  laneSlider.step = "1";
+  laneSlider.value = String(roadLaneCount);
+  const showLaneCount = () => (laneLabel.textContent = `車線 ${roadLaneCount}`);
+  showLaneCount();
+  laneSlider.addEventListener("input", () => {
+    roadLaneCount = Number(laneSlider.value);
+    showLaneCount();
+    roadQuoteKey = "";
+  });
+  laneWrap.append(laneLabel, laneSlider);
+  palette.append(laneWrap);
   // 曲線: 始点 → 制御点 → 終点の 3 クリックで敷く
   let roadCurve = false;
   let roadControl: { x: number; y: number } | null = null;
@@ -1227,11 +1247,11 @@ async function main() {
       }
       const pts = roadCurve && roadControl ? curvePoints(roadStart, roadControl, p) : [roadStart, p];
       // 敷けない (水や山が長すぎる等)・お金が足りないときは敷けない (始点はそのまま)
-      if (city.buildPath(pts, roadType, roadOneWay, roadLanes)) {
+      if (city.buildPath(pts, roadType, roadOneWay, roadLanes, roadLaneCount)) {
         roadStart = p; // 続けて引ける
         roadControl = null;
       } else {
-        const q = city.quotePath(pts, roadType, roadOneWay, roadLanes);
+        const q = city.quotePath(pts, roadType, roadOneWay, roadLanes, roadLaneCount);
         if (!q.ok) showTip(q.reason ?? "ここには敷けません", 3);
         else if (!city.canAfford(q.cost)) showTip("お金が足りません", 3);
       }
@@ -1798,10 +1818,10 @@ async function main() {
         const pts = curved ? curvePoints(roadStart, roadControl!, p) : [roadStart, p];
         // 見積もりは、カーソルや道路が変わったときだけ求め直す (曲線で制御点を待っている間は、直線で見積もる)
         const waiting = roadCurve && !roadControl;
-        const qk = `${roadStart.x},${roadStart.y}|${roadControl?.x},${roadControl?.y}|${p.x},${p.y}|${roadType}|${roadOneWay}|${roadLanes}|${graph.version}`;
+        const qk = `${roadStart.x},${roadStart.y}|${roadControl?.x},${roadControl?.y}|${p.x},${p.y}|${roadType}|${roadOneWay}|${roadLanes}|${roadLaneCount}|${graph.version}`;
         if (qk !== roadQuoteKey) {
           roadQuoteKey = qk;
-          roadQuote = city.quotePath(pts, roadType, roadOneWay, roadLanes);
+          roadQuote = city.quotePath(pts, roadType, roadOneWay, roadLanes, roadLaneCount);
           const q = roadQuote;
           const extra = [q.bridge > 0 ? `${STRUCTURE_SPECS[Structure.Bridge].name} ${Math.round(q.bridge)} タイル` : "", q.tunnel > 0 ? `${STRUCTURE_SPECS[Structure.Tunnel].name} ${Math.round(q.tunnel)} タイル` : ""].filter(Boolean).join("・");
           tipUntil = 0;

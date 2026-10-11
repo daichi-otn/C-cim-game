@@ -62,7 +62,16 @@ const LANE_SPEED: Record<number, number> = { [LANE.Median]: 1.05, [LANE.Parking]
 
 const laneMult = (table: Record<number, number>, lanes: number) => Object.entries(table).reduce((m, [bit, v]) => (lanes & Number(bit) ? m * v : m), 1);
 
-export const roadCapacity = (type: RoadType, oneWay: boolean, lanes = 0) => Math.round(ROAD_SPECS[type].capacity * (oneWay ? ONE_WAY_CAPACITY : 1) * laneMult(LANE_CAPACITY, lanes));
+/** 車線の数の既定値 (道路の種類の表の容量・建設費は、この車線数のもの)。 */
+export const DEFAULT_LANE_COUNT = 2;
+export const MIN_LANE_COUNT = 2;
+export const MAX_LANE_COUNT = 20;
+
+/** 車線の数に応じた、容量と建設費の倍率 (既定の 2 車線が 1 倍)。 */
+export const laneCountMult = (laneCount: number) => laneCount / DEFAULT_LANE_COUNT;
+
+export const roadCapacity = (type: RoadType, oneWay: boolean, lanes = 0, laneCount = DEFAULT_LANE_COUNT) =>
+  Math.round(ROAD_SPECS[type].capacity * (oneWay ? ONE_WAY_CAPACITY : 1) * laneMult(LANE_CAPACITY, lanes) * laneCountMult(laneCount));
 export const roadSpeed = (type: RoadType, oneWay: boolean, lanes = 0) => ROAD_SPECS[type].speed * (oneWay ? ONE_WAY_SPEED : 1) * laneMult(LANE_SPEED, lanes);
 
 export const DEFAULT_ROAD_TYPE = RoadType.Street;

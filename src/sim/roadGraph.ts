@@ -18,18 +18,20 @@ export interface RoadEdge {
   structure: Structure;
   /** 車線の種類 (LANE のビットの組み合わせ)。0 = 普通の道路。 */
   lanes: number;
+  /** 車線の数 (両方向の合計。2〜20)。容量と建設費に効く。 */
+  laneCount: number;
 }
 
 export type OneWay = 0 | 1 | -1;
 
 /** 直近の addRoad で、新しく敷いた区間と、種類を変えた (アップグレードした) 区間。費用の計算に使う。 */
 export interface RoadChange {
-  built: { length: number; type: RoadType; structure: Structure }[];
-  changed: { length: number; from: RoadType; to: RoadType; structure: Structure }[];
+  built: { length: number; type: RoadType; structure: Structure; laneCount: number }[];
+  changed: { length: number; from: RoadType; to: RoadType; structure: Structure; fromLanes: number; toLanes: number }[];
 }
 
 import { Structure, isStructure, upkeepMultOf } from "./structures";
-import { DEFAULT_ROAD_TYPE, ROAD_SPECS, isRoadType, roadCapacity, type RoadType } from "./roadTypes";
+import { DEFAULT_LANE_COUNT, DEFAULT_ROAD_TYPE, MAX_LANE_COUNT, MIN_LANE_COUNT, ROAD_SPECS, isRoadType, roadCapacity, type RoadType } from "./roadTypes";
 
 /** 建物の出入口になれる道路か (高速道路は不可)。 */
 export const isAccessEdge = (e: RoadEdge) => ROAD_SPECS[e.type].access && e.structure === Structure.None;
@@ -79,7 +81,7 @@ function intersect(
 export interface RoadGraphData {
   nextId: number;
   nodes: [number, number, number][];
-  edges: [number, number, number, number?, number?, number?, number?, number?][];
+  edges: [number, number, number, number?, number?, number?, number?, number?, number?][];
 }
 
 export class RoadGraph {
@@ -101,7 +103,7 @@ export class RoadGraph {
    * 既存の道路と重なった部分は、type が違えばその種類に変わる (アップグレード・ダウングレード)。
    * oneWay なら、始点 (ax,ay) から終点 (bx,by) へ向かう一方通行になる。重なった部分も、向きがその通りに変わる。
    */
-  addRoad(ax: number, ay: number, bx: number, by: number, type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false, chain = 0, structure: Structure = Structure.None, lanes = 0): number {
+  addRoad(ax: number, ay: number, bx: number, by: number, type: RoadType = DEFAULT_ROAD_TYPE, oneWay = false, chain = 0, structure: Structure = Structure.None, lanes = 0, laneCount = DEFAULT_LANE_COUNT): number {
     this.lastChange = { built: [], changed: [] };
     if (Math.hypot(bx - ax, by - ay) < EPS) return 0;
 
@@ -145,19 +147,20 @@ export class RoadGraph {
       const length = Math.hypot(nb.x - na.x, nb.y - na.y);
       const existing = this.edgeByPair.get(pairKey(a, b));
       if (existing === undefined) {
-        if (this.addEdgeRaw(a, b, type, oneWay ? 1 : 0, chain, structure, lanes)) {
-          this.lastChange.built.push({ length, type, structure });
+        if (this.addEdgeRaw(a, b, type, oneWay ? 1 : 0, chain, structure, lanes, laneCount)) {
+          this.lastChange.built.push({ length, type, structure, laneCount });
           changes++;
         }
       } else {
         const e = this.edges.get(existing)!;
         // 描いた向き (a → b) が、既存の区間の向きと同じなら 1、逆なら -1
         const want: OneWay = oneWay ? (e.a === a ? 1 : -1) : 0;
-        if (e.type !== type || e.oneWay !== want || e.lanes !== lanes) {
-          this.lastChange.changed.push({ length, from: e.type, to: type, structure: e.structure });
+        if (e.type !== type || e.oneWay !== want || e.lanes !== lanes || e.laneCount !== laneCount) {
+          this.lastChange.changed.push({ length, from: e.type, to: type, structure: e.structure, fromLanes: e.laneCount, toLanes: laneCount });
           e.type = type;
           e.oneWay = want;
           e.lanes = lanes;
+          e.laneCount = laneCount;
           this.version++;
           changes++;
         }
@@ -171,7 +174,7 @@ export class RoadGraph {
     return {
       nextId: this.nextId,
       nodes: [...this.nodes.values()].map((n) => [n.id, n.x, n.y]),
-      edges: [...this.edges.values()].map((e) => [e.id, e.a, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes]),
+      edges: [...this.edges.values()].map((e) => [e.id, e.a, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes, e.laneCount]),
     };
   }
 
@@ -188,7 +191,7 @@ export class RoadGraph {
       g.adj.set(id, new Set());
       maxId = Math.max(maxId, id);
     }
-    for (const [id, a, b, rawType, rawOneWay, rawChain, rawStructure, rawLanes] of d.edges) {
+    for (const [id, a, b, rawType, rawOneWay, rawChain, rawStructure, rawLanes, rawLaneCount] of d.edges) {
       const structure = rawStructure === undefined ? Structure.None : rawStructure;
       if (!isStructure(structure)) throw new Error("橋・トンネルの種類が不正です");
       const chain = rawChain === undefined ? 0 : rawChain;
@@ -202,7 +205,10 @@ export class RoadGraph {
       if (g.edges.has(id) || g.edgeByPair.has(pair)) throw new Error("道路のエッジが重複しています");
       const lanes = rawLanes === undefined ? 0 : rawLanes;
       if (!Number.isInteger(lanes) || lanes < 0 || lanes > 15) throw new Error("車線の種類が不正です");
-      g.edges.set(id, { id, a, b, type, oneWay, chain, structure, lanes });
+      // 車線の数は、古いデータでは既定の 2 車線
+      const laneCount = rawLaneCount === undefined ? DEFAULT_LANE_COUNT : rawLaneCount;
+      if (!Number.isInteger(laneCount) || laneCount < MIN_LANE_COUNT || laneCount > MAX_LANE_COUNT) throw new Error("車線の数が不正です");
+      g.edges.set(id, { id, a, b, type, oneWay, chain, structure, lanes, laneCount });
       g.edgeByPair.set(pair, id);
       g.adj.get(a)!.add(id);
       g.adj.get(b)!.add(id);
@@ -249,7 +255,7 @@ export class RoadGraph {
       const na = this.nodes.get(e.a)!;
       const nb = this.nodes.get(e.b)!;
       if (projectOnSegment(x, y, na.x, na.y, nb.x, nb.y).dist > maxDist) continue;
-      best = Math.max(best, roadCapacity(e.type, e.oneWay !== 0, e.lanes));
+      best = Math.max(best, roadCapacity(e.type, e.oneWay !== 0, e.lanes, e.laneCount));
     }
     return best;
   }
@@ -279,7 +285,7 @@ export class RoadGraph {
         let bestCos = -2;
         for (const id of this.adj.get(next) ?? []) {
           const c = this.edges.get(id)!;
-          if (run.has(c.id) || c.type !== e.type || c.structure !== e.structure || (c.oneWay === 0) !== (e.oneWay === 0) || c.lanes !== e.lanes) continue;
+          if (run.has(c.id) || c.type !== e.type || c.structure !== e.structure || (c.oneWay === 0) !== (e.oneWay === 0) || c.lanes !== e.lanes || c.laneCount !== e.laneCount) continue;
           const d = dirOut(c, next);
           const cos = heading.x * d.x + heading.y * d.y;
           const sameCurve = c.chain !== 0 && c.chain === e.chain;
@@ -440,11 +446,11 @@ export class RoadGraph {
   }
 
   /** エッジを追加する。自己ループや重複なら何もせず false。 */
-  private addEdgeRaw(a: number, b: number, type: RoadType, oneWay: OneWay = 0, chain = 0, structure: Structure = Structure.None, lanes = 0): boolean {
+  private addEdgeRaw(a: number, b: number, type: RoadType, oneWay: OneWay = 0, chain = 0, structure: Structure = Structure.None, lanes = 0, laneCount = DEFAULT_LANE_COUNT): boolean {
     if (a === b) return false;
     const key = pairKey(a, b);
     if (this.edgeByPair.has(key)) return false;
-    const edge: RoadEdge = { id: this.nextId++, a, b, type, oneWay, chain, structure, lanes };
+    const edge: RoadEdge = { id: this.nextId++, a, b, type, oneWay, chain, structure, lanes, laneCount };
     this.edges.set(edge.id, edge);
     this.edgeByPair.set(key, edge.id);
     this.adj.get(a)!.add(edge.id);
@@ -456,8 +462,8 @@ export class RoadGraph {
   private splitEdge(e: RoadEdge, n: RoadNode): void {
     if (n.id === e.a || n.id === e.b) return;
     this.deleteEdge(e);
-    this.addEdgeRaw(e.a, n.id, e.type, e.oneWay, e.chain, e.structure, e.lanes);
-    this.addEdgeRaw(n.id, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes);
+    this.addEdgeRaw(e.a, n.id, e.type, e.oneWay, e.chain, e.structure, e.lanes, e.laneCount);
+    this.addEdgeRaw(n.id, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes, e.laneCount);
   }
 
   private deleteEdge(e: RoadEdge): void {
