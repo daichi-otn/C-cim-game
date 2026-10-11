@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CAR, aheadGap, idmAccel, LANE_OFFSET, nearestSegment, overlapsInLane, projectOnSegment, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "../src/render3d/carMotion";
+import { CAR, aheadGap, driverOf, idmAccel, LANE_OFFSET, nearestSegment, overlapsInLane, projectOnSegment, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "../src/render3d/carMotion";
 
 describe("車の加速と減速", () => {
   it("空いている道では、目標の速さまで加速し、そこで止まる", () => {
@@ -91,3 +91,18 @@ describe("重なった車", () => {
     expect(overlapsInLane(0, 0, 0, 0.1, 2 * LANE_OFFSET)).toBe(false);
   });
 });
+
+describe("運転の個性", () => {
+  it("速さの好みは 0.85〜1.15、車間は車ごとに違う (詰めて走る車と、あけて走る車)", () => {
+    const slow = driverOf(0);
+    const fast = driverOf(1);
+    expect(slow.pace).toBeCloseTo(0.85, 9);
+    expect(fast.pace).toBeCloseTo(1.15, 9);
+    expect(fast.headway).toBeLessThan(slow.headway);
+    expect(driverOf(0.5).headway).toBeCloseTo(CAR.headway, 9);
+  });
+  it("車間を広く取る車は、同じ距離でより強く減速する", () => {
+    expect(idmAccel(2, 3, 1, 2, 1.5)).toBeLessThan(idmAccel(2, 3, 1, 2, 0.5));
+  });
+});
+

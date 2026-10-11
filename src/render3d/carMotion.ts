@@ -19,12 +19,12 @@ export const CAR = {
  * 今の加速度。vTarget は目標の速さ、gap は前の車までの距離 (前がなければ null)、leaderV は前の車の速さ。
  * 負の値は減速 (ブレーキ)。
  */
-export function idmAccel(v: number, vTarget: number, gap: number | null, leaderV: number): number {
+export function idmAccel(v: number, vTarget: number, gap: number | null, leaderV: number, headway: number = CAR.headway): number {
   const vt = Math.max(vTarget, 0.01);
   const free = 1 - Math.pow(Math.max(v, 0) / vt, 4);
   if (gap === null) return CAR.accel * free;
   const dv = v - leaderV;
-  const sStar = CAR.minGap + Math.max(0, v * CAR.headway + (v * dv) / (2 * Math.sqrt(CAR.accel * CAR.decel)));
+  const sStar = CAR.minGap + Math.max(0, v * headway + (v * dv) / (2 * Math.sqrt(CAR.accel * CAR.decel)));
   return CAR.accel * (free - Math.pow(sStar / Math.max(gap, 0.01), 2));
 }
 
@@ -116,5 +116,14 @@ export function overlapsInLane(mx: number, my: number, h: number, ox: number, oy
 /** 車線の上の、車の中心の位置 (タイル)。(ax,ay) は道路の中心線の上の点、h は車線の向き。左側を走る。 */
 export function lanePoint(ax: number, ay: number, h: number): { x: number; y: number } {
   return { x: ax + Math.sin(h) * LANE_OFFSET, y: ay - Math.cos(h) * LANE_OFFSET };
+}
+
+/**
+ * 運転の個性。車ごとに、速さの好み (pace: 1 が標準、遅い車 0.85 〜 速い車 1.15) と、前の車との間隔の詰め方
+ * (headway: 秒。小さいほど詰めて走る)。seed (0〜1 の値) から決まり、同じ車は毎回同じ。
+ */
+export function driverOf(seed01: number): { pace: number; headway: number } {
+  const s = Math.max(0, Math.min(1, seed01));
+  return { pace: 0.85 + 0.3 * s, headway: CAR.headway * (1.25 - 0.5 * s) };
 }
 

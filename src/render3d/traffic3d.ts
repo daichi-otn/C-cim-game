@@ -5,7 +5,7 @@ import { ROAD_SPECS } from "../sim/roadTypes";
 import { edgeCongestion } from "../sim/traffic";
 import type { RoadGraph } from "../sim/roadGraph";
 import { GeoBuilder } from "./geo";
-import { aheadGap, CAR, CAR_LEN, idmAccel, lanePoint, nearestSegment, overlapsInLane, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "./carMotion";
+import { aheadGap, CAR, CAR_LEN, driverOf, idmAccel, lanePoint, nearestSegment, overlapsInLane, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "./carMotion";
 import type { Roads3D } from "./roads3d";
 import { TILE } from "./terrain3d";
 import type { ZoneCell } from "../sim/zoning";
@@ -134,6 +134,9 @@ interface Car {
   braking: boolean;
   /** 今、通り抜けている交差点 (ノード)。-1 なら、どこも押さえていない。 */
   claimNode: number;
+  /** 運転の個性: 速さの好みと、前の車との間隔 (秒)。 */
+  pace: number;
+  headway: number;
   /** 車の中心の位置 (タイル)。道路が作り替わったとき、いまの道路へ戻すために使う。 */
   ax: number;
   ay: number;
@@ -354,7 +357,7 @@ export class Traffic3D {
     const b = graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     const ratio = edgeCongestion(graph, car.edge, this.city.traffic.flow.get(car.edge) ?? 0, this.city.traffic.capMult);
-    let vTarget = FREE_SPEED * ROAD_SPECS[e.type].speed * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
+    let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
     const distToEnd = (car.dir > 0 ? 1 - car.p : car.p) * len;
     // 行き先 (または行き止まり) の手前では、ぴたりと止まるように減速する
     if (car.route.length === 0) vTarget = Math.min(vTarget, stopSpeed(distToEnd) + 0.05);
@@ -369,7 +372,7 @@ export class Traffic3D {
       vTarget = Math.min(vTarget, stopSpeed(distToEnd - 0.4) + 0.05);
     // 前の車との間隔
     const leader = this.leaderOf(car);
-    const accel = idmAccel(car.speed, vTarget, leader?.gap ?? null, leader?.speed ?? 0);
+    const accel = idmAccel(car.speed, vTarget, leader?.gap ?? null, leader?.speed ?? 0, car.headway);
     car.speed = stepSpeed(car.speed, accel, dt);
     car.braking = accel < -0.8;
     // 前の車を追い越さない: 1 フレームで、前の車との間隔より先へは進めない (重なりの最後の守り)
@@ -671,6 +674,8 @@ export class Traffic3D {
           uturn: -1,
           braking: false,
           claimNode: -1,
+          pace: driverOf(hash2(id, i, 11)).pace,
+          headway: driverOf(hash2(id, i, 11)).headway,
           ax: a.x + (b.x - a.x) * p,
           ay: a.y + (b.y - a.y) * p,
         };
