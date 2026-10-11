@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RoadType } from "../src/sim/roadTypes";
 import { Traffic3D } from "../src/render3d/traffic3d";
-import { lanePoint, projectOnSegment } from "../src/render3d/carMotion";
+import { projectOnSegment } from "../src/render3d/carMotion";
 import type { Roads3D } from "../src/render3d/roads3d";
 import { setup } from "./helpers";
 
@@ -9,7 +9,7 @@ import { setup } from "./helpers";
 const flatRoads = { heightOnEdge: () => 0 } as unknown as Roads3D;
 type Internal = { cars: { edge: number; ax: number; ay: number; heading: number }[] };
 /** 車の中心の位置 (車線の上)。Traffic3D が描く位置と同じ。 */
-const lanes = (t: Traffic3D) => (t as unknown as Internal).cars.map((c) => lanePoint(c.ax, c.ay, (t as any).laneHeading(c)));
+const lanes = (t: Traffic3D) => (t as unknown as Internal).cars.map((c) => (t as any).lanePos(c) as { x: number; y: number });
 
 /** 交差点 (十字) がある街と、車を走らせる Traffic3D を作る。 */
 function crossingCity() {
@@ -62,5 +62,30 @@ describe("交差点での車", () => {
     }
     // 車の長さは 0.3 タイル。0.2 タイルより近づかないこと
     expect(worst).toBeGreaterThan(0.2);
-  });
+  }, 120000);
+
+  it("車線が多い道路でも、車は車線ごとに並び、車同士が重ならない", () => {
+    const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, false);
+    city.buildPath([{ x: x0 + 0.5, y: roadY + 0.5 }, { x: x0 + 20.5, y: roadY + 0.5 }], RoadType.Street, false, 0, 6);
+    city.buildPath([{ x: x0 + 10.5, y: roadY - 4.5 }, { x: x0 + 10.5, y: roadY + 5.5 }], RoadType.Street, false, 0, 6);
+    const traffic = new Traffic3D(city, flatRoads);
+    traffic.setCarScale(1);
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 200);
+    city.trafficVersion++;
+    traffic.update(0, 0);
+    const lanesUsed = new Set((traffic as unknown as Internal).cars.map((c: any) => c.lane));
+    expect(lanesUsed.size).toBeGreaterThan(1);
+    for (let i = 0; i < 400; i++) traffic.update(0.05, 0);
+    let worst = Infinity;
+    for (let i = 0; i < 600; i++) {
+      traffic.update(0.05, 0);
+      const pts = lanes(traffic);
+      for (let a = 0; a < pts.length; a++)
+        for (let b = a + 1; b < pts.length; b++) {
+          worst = Math.min(worst, Math.hypot(pts[a]!.x - pts[b]!.x, pts[a]!.y - pts[b]!.y));
+        }
+    }
+    // 交差点の角では、別の道の車が 0.15〜0.2 タイルまで寄ることがある (重なってはいない)
+    expect(worst).toBeGreaterThan(0.15);
+  }, 120000);
 });
