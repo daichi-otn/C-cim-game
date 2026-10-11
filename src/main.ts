@@ -22,6 +22,7 @@ import { ZONE_COLORS } from "./render3d/colors";
 import { TILE as TILE_PX } from "./render3d/terrain3d";
 import { CITY_SONG, TITLE_SONG } from "./audio/music";
 import { residentsNear, Soundscape } from "./audio/soundscape";
+import { emergencyText, headlineText, speak } from "./audio/speech";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, ROAD_TYPES, type RoadType } from "./sim/roadTypes";
 import {
   AUTO_SLOT,
@@ -35,7 +36,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.58.0";
+const VERSION = "0.59.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -937,8 +938,10 @@ async function main() {
   });
   const devBox = $<HTMLInputElement>("menu-dev");
   devBox.checked = devMode;
+  $("menu-alert-test").classList.toggle("hidden", !devMode);
   devBox.addEventListener("change", () => {
     devMode = devBox.checked;
+    $("menu-alert-test").classList.toggle("hidden", !devMode);
     if (g) {
       g.city.devMode = devMode;
       g.city.refresh();
@@ -1704,6 +1707,20 @@ async function main() {
   });
   let nearResidents = 0;
   let nearAt = -1000;
+  // 市の広報 (街の数字を読み上げる) と、緊急速報 (災害など。災害を作ったら、この関数を呼ぶ)
+  const NEWS_EVERY_MS = 120000;
+  let newsAt = 0;
+  let alertTimer = 0;
+  const alertBox = $("alert");
+  function emergencyAlert(title: string, detail: string): void {
+    alertBox.textContent = `緊急速報: ${title}`;
+    alertBox.classList.remove("hidden");
+    window.clearTimeout(alertTimer);
+    alertTimer = window.setTimeout(() => alertBox.classList.add("hidden"), 9000);
+    soundscape.alertChime();
+    if (soundscape.isEnabled) window.setTimeout(() => speak(emergencyText(title, detail)), 900);
+  }
+  $("menu-alert-test").addEventListener("click", () => emergencyAlert("大雨の警報", "川の近くの方は、高いところへ避難してください。(テスト)"));
 
   let lastFrameAt = performance.now();
   const frame = () => {
@@ -1750,6 +1767,12 @@ async function main() {
     if (nowMs - nearAt > 500) {
       nearAt = nowMs;
       nearResidents = residentsNear(zones.cells.values(), cxT, cyT);
+    }
+    // 市の広報: 数字を、人の声で読み上げる (音がオンで、動いているとき。2 分ごと)
+    if (newsAt === 0) newsAt = nowMs + 30000;
+    if (nowMs > newsAt && soundscape.isEnabled && speed > 0 && !modalOpen()) {
+      newsAt = nowMs + NEWS_EVERY_MS;
+      speak(headlineText({ population: zones.totals().population, money: city.money, taxRate: city.taxRate }));
     }
     const cons = world.soundConstruction(cxT, cyT);
     soundscape.update({

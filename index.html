@@ -101,6 +101,7 @@
       #tutorial .btn { pointer-events: auto; }
       .tut-frame { position: fixed; pointer-events: none; z-index: 5; border: 3px solid #ffd54a; border-radius: 8px; box-shadow: 0 0 0 2px rgba(0,0,0,.35);
                    transition: left .45s ease, top .45s ease, width .45s ease, height .45s ease; animation: tut-pulse 1.2s infinite; }
+      #alert { position: fixed; top: 56px; left: 50%; transform: translateX(-50%); z-index: 9; background: #b3261e; color: #fff; font: bold 15px sans-serif; padding: 9px 16px; border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.45); max-width: calc(100vw - 24px); }
       @keyframes tut-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .45; } }
       #tut-arrows { position: fixed; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 5; overflow: visible; }
       #tut-arrows line { stroke: #ffd54a; stroke-width: 3; stroke-linecap: round; }
@@ -209,6 +210,7 @@
       </div>
     </div>
     <div id="tip"></div>
+    <div id="alert" class="hidden" role="alert"></div>
     <div id="tutorial" class="hidden">
       <div class="head"><h3 id="tut-title"></h3><span class="count" id="tut-count"></span></div>
       <div class="bar"><i id="tut-bar"></i></div>
@@ -263,6 +265,7 @@
           <button id="menu-help" class="btn">使い方・操作キー</button>
           <button id="menu-tutorial" class="btn">チュートリアル (新しい街で)</button>
           <button id="menu-sound" class="btn">音: あり</button>
+          <button id="menu-alert-test" class="btn hidden">緊急速報のテスト (開発用)</button>
           <button id="menu-title" class="btn">タイトルへ (マップ選択)</button>
           <button id="menu-close" class="btn primary">閉じる</button>
         </div>

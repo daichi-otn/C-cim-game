@@ -314,6 +314,26 @@ export class Soundscape {
     src.start(t, Math.random(), 0.06);
   }
 
+  /** 緊急速報の警報音 (高い音を 3 回)。音がオフなら鳴らさない。 */
+  alertChime(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.enabled) return;
+    const t = ctx.currentTime;
+    [880, 1175, 880].forEach((hz, i) => {
+      const osc = ctx.createOscillator();
+      osc.type = "square";
+      osc.frequency.value = hz;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0, t + i * 0.22);
+      g.gain.linearRampToValueAtTime(0.09, t + i * 0.22 + 0.01);
+      g.gain.linearRampToValueAtTime(0, t + i * 0.22 + 0.18);
+      osc.connect(g);
+      g.connect(this.master);
+      osc.start(t + i * 0.22);
+      osc.stop(t + i * 0.22 + 0.2);
+    });
+  }
+
   /** 建ち上がった建物の、ドンという音。 */
   private thud(x: number, y: number): void {
     const ctx = this.ctx;
