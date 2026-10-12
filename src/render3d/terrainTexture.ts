@@ -2,12 +2,9 @@ import { valueNoise } from "../sim/noise";
 import { hash2 } from "../sim/rng";
 import {
   CHUNK_SIZE,
-  FOREST_LEVEL,
-  MOUNTAIN_LEVEL,
-  SAND_LEVEL,
-  WATER_LEVEL,
   forestAt,
   heightAt,
+  profileOf,
 } from "../sim/terrain";
 
 
@@ -68,6 +65,7 @@ function mixIn(b: RGB, t: number) {
  * 1 タイルあたり res 画素。
  */
 export function renderTerrainTexture(seed: number, cx: number, cy: number, res: number): HTMLCanvasElement {
+  const P = profileOf(seed);
   const size = CHUNK_SIZE * res;
   const canvas = document.createElement("canvas");
   canvas.width = canvas.height = size;
@@ -114,19 +112,19 @@ export function renderTerrainTexture(seed: number, cx: number, cy: number, res: 
       const mottle = valueNoise(noiseSeed, wx * 2.6, wy * 2.6) - 0.5;
       let grain = 0.05;
 
-      if (h < WATER_LEVEL) {
+      if (h < P.water) {
         // 水: 深いほど濃く、岸の近くは浅く明るい。細かい波と、岸の白い波打ち際
-        const depth = clamp01((WATER_LEVEL - h) / 0.2);
+        const depth = clamp01((P.water - h) / 0.2);
         setMix(PAL.shallow, PAL.deep, Math.pow(depth, 0.65));
         const ripple = Math.sin(wx * 7.1 + Math.sin(wy * 2.3) * 2) * Math.sin(wy * 6.3 - wx * 1.7);
         const k = 1 + ripple * 0.05;
         pr *= k; pg *= k; pb *= k;
-        const foamBand = smoothstep(WATER_LEVEL - 0.012, WATER_LEVEL - 0.002, h);
+        const foamBand = smoothstep(P.water - 0.012, P.water - 0.002, h);
         mixIn(PAL.foam, foamBand * (0.4 + 0.35 * (valueNoise(noiseSeed, wx * 3.1, wy * 3.1) - 0.2)));
         grain = 0.025;
-      } else if (h < SAND_LEVEL) {
+      } else if (h < P.sand) {
         // 砂浜: 水際は湿って濃い色、内陸側は乾いて明るい。草地へはなめらかにつなぐ
-        const t = (h - WATER_LEVEL) / (SAND_LEVEL - WATER_LEVEL);
+        const t = (h - P.water) / (P.sand - P.water);
         setMix(PAL.wetSand, PAL.sand, smoothstep(0, 0.35, t));
         mixIn(PAL.grassDry, smoothstep(0.7, 1, t) * 0.8);
         grain = 0.07;
@@ -137,12 +135,12 @@ export function renderTerrainTexture(seed: number, cx: number, cy: number, res: 
         mixIn(PAL.grassDark, clamp01((f - 0.4) * 1.6) * 0.5);
         pr *= 1 + mottle * 0.16; pg *= 1 + mottle * 0.16; pb *= 1 + mottle * 0.16;
         // 森の地面
-        const forest = smoothstep(FOREST_LEVEL - 0.04, FOREST_LEVEL + 0.04, f) * (1 - smoothstep(MOUNTAIN_LEVEL - 0.03, MOUNTAIN_LEVEL, h));
+        const forest = smoothstep(P.forest - 0.04, P.forest + 0.04, f) * (1 - smoothstep(P.mountain - 0.03, P.mountain, h));
         mixIn(PAL.forestGround, forest);
         // 山: 土色 → 岩肌 → 雪
-        const mt = smoothstep(MOUNTAIN_LEVEL - 0.035, MOUNTAIN_LEVEL + 0.01, h);
+        const mt = smoothstep(P.mountain - 0.035, P.mountain + 0.01, h);
         if (mt > 0) {
-          const rockT = smoothstep(MOUNTAIN_LEVEL - 0.02, MOUNTAIN_LEVEL + 0.06, h);
+          const rockT = smoothstep(P.mountain - 0.02, P.mountain + 0.06, h);
           const rockR = lerp(PAL.earth[0], PAL.rock[0], rockT);
           const rockG = lerp(PAL.earth[1], PAL.rock[1], rockT);
           const rockB = lerp(PAL.earth[2], PAL.rock[2], rockT);

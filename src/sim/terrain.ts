@@ -16,31 +16,60 @@ export interface Chunk {
   tiles: Uint8Array;
 }
 
-const SCALE = 0.02;
 
-/** 地形の種類を分ける標高のしきい値と、森になる森ノイズのしきい値。描画側も同じ値で地形をなめらかに塗る。 */
-export const WATER_LEVEL = 0.4;
-export const SAND_LEVEL = 0.44;
-export const MOUNTAIN_LEVEL = 0.68;
-export const FOREST_LEVEL = 0.58;
+/**
+ * 地域ごとの地形の特徴。標高のしきい値 (水・砂・山)、森のしきい値、地形の大きさ (scale。小さいほど、なだらかで大きい)。
+ * 描画側も同じ値で地形をなめらかに塗る。
+ */
+export interface RegionProfile {
+  water: number;
+  sand: number;
+  mountain: number;
+  forest: number;
+  scale: number;
+}
+
+export const DEFAULT_PROFILE: RegionProfile = { water: 0.4, sand: 0.44, mountain: 0.68, forest: 0.58, scale: 0.02 };
+
+/** 地域の地図のシード値 (地図の選択とつながる)。 */
+export const REGION_SEEDS = { japan: 1001, uk: 1002, australia: 1003, newZealand: 1004 } as const;
+
+const REGION_PROFILES = new Map<number, RegionProfile>([
+  // 日本: 山が多く、森と海に囲まれた、起伏の大きい地形
+  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.62, forest: 0.52, scale: 0.03 }],
+  // イギリス: なだらかな丘と、草地と森。山は少ない
+  [REGION_SEEDS.uk, { water: 0.36, sand: 0.4, mountain: 0.82, forest: 0.5, scale: 0.014 }],
+  // オーストラリア: 広く乾いた内陸。水と森が少なく、砂と草地が広がる
+  [REGION_SEEDS.australia, { water: 0.3, sand: 0.42, mountain: 0.86, forest: 0.7, scale: 0.012 }],
+  // ニュージーランド: 海に囲まれた島々と、険しい山
+  [REGION_SEEDS.newZealand, { water: 0.36, sand: 0.4, mountain: 0.62, forest: 0.5, scale: 0.035 }],
+]);
+
+/** 地域の地形の特徴。地図でない (自由なシード) 場合は、標準の地形。 */
+export function profileOf(seed: number): RegionProfile {
+  return REGION_PROFILES.get(seed) ?? DEFAULT_PROFILE;
+}
 
 /** タイル (tx,ty) の標高 (0..1)。 */
 export function heightAt(seed: number, tx: number, ty: number): number {
-  return fbm(seed, tx * SCALE, ty * SCALE, 5);
+  const scale = profileOf(seed).scale;
+  return fbm(seed, tx * scale, ty * scale, 5);
 }
 
 /** タイル (tx,ty) の森ノイズ (0..1)。高いほど森になりやすい。 */
 export function forestAt(seed: number, tx: number, ty: number): number {
-  return fbm(seed + 7919, tx * SCALE * 3, ty * SCALE * 3, 3);
+  const scale = profileOf(seed).scale * 3;
+  return fbm(seed + 7919, tx * scale, ty * scale, 3);
 }
 
 export function tileAt(seed: number, tx: number, ty: number): Tile {
+  const P = profileOf(seed);
   const h = heightAt(seed, tx, ty);
-  if (h < WATER_LEVEL) return Tile.Water;
-  if (h < SAND_LEVEL) return Tile.Sand;
-  if (h > MOUNTAIN_LEVEL) return Tile.Mountain;
+  if (h < P.water) return Tile.Water;
+  if (h < P.sand) return Tile.Sand;
+  if (h > P.mountain) return Tile.Mountain;
   // 森は別ノイズで斑に分布させる
-  return forestAt(seed, tx, ty) > FOREST_LEVEL ? Tile.Forest : Tile.Grass;
+  return forestAt(seed, tx, ty) > P.forest ? Tile.Forest : Tile.Grass;
 }
 
 /** チャンク座標 (cx, cy) の地形を生成する。同じ seed なら常に同じ結果。 */

@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import { CHUNK_SIZE, MOUNTAIN_LEVEL, SAND_LEVEL, heightAt } from "../sim/terrain";
+import { CHUNK_SIZE, heightAt, profileOf } from "../sim/terrain";
 import { renderTerrainTexture, resolutionFor } from "./terrainTexture";
 
 /** 1 タイルの大きさ (px。世界の単位)。 */
@@ -25,13 +25,14 @@ export const WATER_Z = -2.2;
  */
 export function groundHeight(seed: number, wx: number, wy: number): number {
   const h = heightAt(seed, wx / TILE, wy / TILE);
-  if (h < SAND_LEVEL) {
+  const P = profileOf(seed);
+  if (h < P.sand) {
     // 水の深さに応じて沈み、砂浜の端で 0 に戻る
-    return WATER_Z * 1.4 * (1 - smooth(0.3, SAND_LEVEL, h));
+    return WATER_Z * 1.4 * (1 - smooth(0.3, P.sand, h));
   }
   // 山: 標高が高いほど、急に盛り上がる (ふもとはなだらか、高いところは峰になる)
-  if (h > MOUNTAIN_LEVEL - 0.03) {
-    const t = h - (MOUNTAIN_LEVEL - 0.03);
+  if (h > P.mountain - 0.03) {
+    const t = h - (P.mountain - 0.03);
     return (t * 380 + t * t * 2600) * smooth(0, 0.04, t);
   }
   return 0;
