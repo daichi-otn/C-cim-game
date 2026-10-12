@@ -5,6 +5,7 @@ import { KeyCamera } from "./render3d/keyCamera";
 import { SEASON_NAMES, WEATHER_NAMES } from "./sim/weather";
 import { DAY_MODE_NAMES, DayClock, START_HOUR, formatHour } from "./render/lighting";
 import { drawMapPreview } from "./render/mapPreview";
+import { drawTitleScene } from "./render/titleScene";
 import { City, type RoadQuote } from "./sim/city";
 import { LANE } from "./sim/roadTypes";
 import { DISTRICT_COLORS, GREENERY_NAMES, type Greenery } from "./sim/district";
@@ -36,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.73.0";
+const VERSION = "0.74.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -866,8 +867,34 @@ async function main() {
   });
   $("seed-random").addEventListener("click", () => startCustom(randomSeed()));
 
+  // タイトル画面の背景: 開いているあいだだけ動かす (動きを減らす設定のときは、止めた絵)
+  const titleBg = $<HTMLCanvasElement>("title-bg");
+  const titleCtx = titleBg.getContext("2d")!;
+  const reduceMotion = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const titleStart = performance.now();
+  let titleRaf = 0;
+  const sizeTitleBg = () => {
+    const dpr = Math.min(window.devicePixelRatio || 1, 1.5);
+    titleBg.width = Math.round(innerWidth * dpr);
+    titleBg.height = Math.round(innerHeight * dpr);
+    titleCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  };
+  const titleTick = () => {
+    titleRaf = 0;
+    if (titleEl.classList.contains("hidden")) return;
+    drawTitleScene(titleCtx, innerWidth, innerHeight, reduceMotion ? 0 : (performance.now() - titleStart) / 1000);
+    titleRaf = requestAnimationFrame(titleTick);
+  };
+  const startTitleScene = () => {
+    sizeTitleBg();
+    if (!titleRaf) titleRaf = requestAnimationFrame(titleTick);
+  };
+  window.addEventListener("resize", () => {
+    if (!titleEl.classList.contains("hidden")) sizeTitleBg();
+  });
   function openTitle() {
     if (g) autosave();
+    startTitleScene();
     soundscape.playSong(TITLE_SONG);
     menuEl.classList.add("hidden");
     reportTitle("");
