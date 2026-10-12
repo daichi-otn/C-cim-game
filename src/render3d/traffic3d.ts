@@ -28,6 +28,8 @@ const CAPACITY = 6000;
 const SPAWN_GAP = 0.4;
 /** これだけ止まり続けた車は、交差点の譲り合いと、U ターンの待ちを一時的に気にしない (秒)。 */
 const STALL_SEC = 20;
+/** 交差点からこの距離 (タイル) より近い車は、信号で止まらない。 */
+const JUNCTION_COMMIT = 1.0;
 /** 前の車を探す距離 (タイル)。 */
 const LEADER_LOOK = 2.5;
 
@@ -551,6 +553,8 @@ export class Traffic3D {
 
   /** 信号: 赤なら止まる。黄色は、止まれるなら止まる (止まれないときは、そのまま通る)。 */
   private mustSignalStop(car: Car, distToEnd: number): boolean {
+    // 交差点の近くまで来た車は、信号に関係なく、行きたい方向へ進む (途中で止まると、交差点がふさがるため)
+    if (distToEnd <= JUNCTION_COMMIT) return false;
     const group = this.plan.get(this.endNode(car))?.get(car.edge);
     if (group === undefined) return false;
     const light = lightOf(group, this.clock);
@@ -587,14 +591,26 @@ export class Traffic3D {
 
   /** いまの交差点から、目的地までの道順を作る。目的地が決まっていなければ、目的の種類 (住宅か職場) から選ぶ。 */
   private planFrom(car: Car, from: number): void {
+    // 目的地が決まっていなければ、行けるところを選ぶ (行けない場所は、何度か選び直す)
     if (car.dest < 0) {
       const list = car.goal === "work" ? this.workNodes : this.homeNodes;
       const pool = list.length > 0 ? list : [...this.city.graph.nodes.keys()];
-      car.dest = pool[Math.floor(hash2(car.seed, from + this.carSerial++, pool.length) * pool.length)] ?? -1;
-      if (car.dest === from) car.dest = -1;
+      for (let k = 0; k < 6 && car.dest < 0; k++) {
+        const cand = pool[Math.floor(hash2(car.seed, from + this.carSerial++, pool.length) * pool.length)] ?? -1;
+        if (cand < 0 || cand === from) continue;
+        const route = routeTo(this.city.graph, from, car.seed, cand);
+        if (route.length > 0) {
+          car.dest = cand;
+          car.route = route;
+          return;
+        }
+      }
+      car.dest = -1;
+      car.route = [];
+      return;
     }
-    car.route = car.dest >= 0 ? routeTo(this.city.graph, from, car.seed, car.dest) : [];
-    if (car.dest >= 0 && car.route.length === 0 && from !== car.dest) car.dest = -1; // 届かない場所は、選び直す
+    car.route = routeTo(this.city.graph, from, car.seed, car.dest);
+    if (car.route.length === 0 && from !== car.dest) car.dest = -1; // 届かない場所は、選び直す
   }
 
   /** 住宅の前と、職場の前の交差点を集める。 */
