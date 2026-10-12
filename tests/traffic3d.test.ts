@@ -14,7 +14,8 @@ const lanes = (t: Traffic3D) => (t as unknown as Internal).cars.map((c) => laneP
 
 /** 交差点 (十字) がある街と、車を走らせる Traffic3D を作る。 */
 function crossingCity() {
-  const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, false);
+  const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, true);
+  city.refresh();
   const traffic = new Traffic3D(city, flatRoads);
   traffic.setCarScale(1);
   return { city, x0, roadY, traffic };
@@ -23,6 +24,7 @@ function crossingCity() {
 describe("交差点での車", () => {
   it("道路が交差点で分割されても、車は消えず、いまの道路の上に残る", () => {
     const { city, x0, roadY, traffic } = crossingCity();
+    city.refresh();
     for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
     city.trafficVersion++;
     traffic.update(0.1, 0);
@@ -49,6 +51,7 @@ describe("交差点での車", () => {
   it("車が走り続けても、車同士が重ならない (車線の上の中心どうしが近づきすぎない)", () => {
     const { city, x0, roadY, traffic } = crossingCity();
     city.buildRoad(x0 + 10.5, roadY - 4.5, x0 + 10.5, roadY + 5.5, RoadType.Street);
+    city.refresh();
     for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
     city.trafficVersion++;
     traffic.update(0, 0);
@@ -76,6 +79,7 @@ describe("住民の車", () => {
     city.people = [{ id: 999, home: [home!.x, home!.y], ageDays: 30 * 365, work: [job!.x, job!.y] }];
     const traffic = new Traffic3D(city, flatRoads);
     traffic.setCarScale(1);
+    city.refresh();
     for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
     city.trafficVersion++;
     traffic.update(0, 0);
@@ -101,11 +105,29 @@ describe("車の数の上限", () => {
     const { city, x0, roadY } = setup();
     city.buildRoad(x0 + 10.5, roadY - 4.5, x0 + 10.5, roadY + 5.5, RoadType.Avenue);
     for (let i = 0; i < 300; i++) city.tick();
+    city.refresh();
     for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 5000);
     city.trafficVersion++;
     const traffic = new Traffic3D(city, flatRoads);
     traffic.setCarScale(1);
     traffic.update(0, 0);
     expect((traffic as unknown as Internal).cars.length).toBeLessThanOrEqual(400);
+  });
+});
+
+describe("外部接続からだけ車が来る", () => {
+  it("外部接続につながっていない道路には、車が出ない", () => {
+    const { city, x0, roadY } = setup({ r: false, c: false, i: false }, {}, true);
+    // 外部接続のない道路 (別の場所)
+    city.buildRoad(x0 + 1.5, roadY + 12.5, x0 + 20.5, roadY + 12.5);
+    city.refresh();
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 300);
+    city.trafficVersion++;
+    const traffic = new Traffic3D(city, flatRoads);
+    traffic.setCarScale(1);
+    traffic.update(0, 0);
+    const cars = (traffic as unknown as Internal).cars;
+    expect(cars.length).toBeGreaterThan(0);
+    expect(cars.every((c) => city.isOutsideNode(city.graph.edges.get(c.edge)!.a))).toBe(true);
   });
 });

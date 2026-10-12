@@ -626,10 +626,10 @@ export class Traffic3D {
     // 目的地が決まっていなければ、行けるところを選ぶ (行けない場所は、何度か選び直す)
     if (car.dest < 0) {
       const list = car.goal === "work" ? this.workNodes : this.homeNodes;
-      const pool = list.length > 0 ? list : [...this.city.graph.nodes.keys()];
-      for (let k = 0; k < 6 && car.dest < 0; k++) {
+      const pool = (list.length > 0 ? list : [...this.city.graph.nodes.keys()]).filter((n) => this.city.isOutsideNode(n));
+      for (let k = 0; k < 6 && car.dest < 0 && pool.length > 0; k++) {
         const cand = pool[Math.floor(hash2(car.seed, from + this.carSerial++, pool.length) * pool.length)] ?? -1;
-        if (cand < 0 || cand === from) continue;
+        if (cand < 0 || cand === from || !this.city.isOutsideNode(cand)) continue;
         const route = routeTo(this.city.graph, from, car.seed, cand);
         if (route.length > 0) {
           car.dest = cand;
@@ -724,6 +724,8 @@ export class Traffic3D {
     }
     for (const [id, flow] of city.traffic.flow) {
       if (!city.graph.edges.has(id)) continue;
+      // 車は、外部接続につながった道路にだけ来る
+      if (!city.isOutsideNode(city.graph.edges.get(id)!.a)) continue;
       const want = this.carScale <= 0 ? 0 : Math.round(Math.min(MAX_CARS_PER_EDGE, Math.max(1, Math.round(flow / FLOW_PER_CAR))) * this.carScale);
       const oneWayDir = city.graph.edges.get(id)!.oneWay;
       const here = kept.filter((c) => c.edge === id);

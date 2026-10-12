@@ -224,6 +224,15 @@ export class City {
   private netGraphVersion = -1;
   private netFacilitiesVersion = -1;
   private nodeNet = new Map<number, number>();
+  /** 道路の交差点 (ノード) が、どの道路網に属するか。外部接続につながる道路網は outsideNets。 */
+  networkOfNode(nodeId: number): number {
+    return this.nodeNet.get(nodeId) ?? 0;
+  }
+
+  /** この交差点は、外部接続につながっているか (車が来て、行けるところか)。 */
+  isOutsideNode(nodeId: number): boolean {
+    return this.outsideNets.has(this.networkOfNode(nodeId));
+  }
   private trafficKey = "";
 
   constructor(readonly seed: number, graph = new RoadGraph(), rngState?: number) {
