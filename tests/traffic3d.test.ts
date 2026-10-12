@@ -131,3 +131,22 @@ describe("外部接続からだけ車が来る", () => {
     expect(cars.every((c) => city.isOutsideNode(city.graph.edges.get(c.edge)!.a))).toBe(true);
   });
 });
+
+describe("外部接続の入口から出てくる", () => {
+  it("車は、外部接続の入口 (道路の端) から生まれる", () => {
+    const { city } = setup({ r: true, c: false, i: false }, {}, true);
+    for (let i = 0; i < 200; i++) city.tick();
+    city.refresh();
+    const traffic = new Traffic3D(city, flatRoads);
+    traffic.setCarScale(1);
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 200);
+    city.trafficVersion++;
+    traffic.update(0, 0);
+    const cars = (traffic as unknown as Internal).cars as any[];
+    expect(cars.length).toBeGreaterThan(0);
+    const entries = (traffic as any).entries as { node: number; edge: number; dir: number }[];
+    expect(entries.length).toBeGreaterThan(0);
+    // 生まれた車は、いずれかの入口の道の端にいる
+    expect(cars.every((c) => entries.some((en) => en.edge === c.edge && c.p === (en.dir > 0 ? 0 : 1)))).toBe(true);
+  });
+});

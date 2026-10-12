@@ -13,10 +13,10 @@ import { ZoneType } from "../sim/zoning";
 import { falloff } from "../audio/soundMath";
 import { buildSignalPlan, lightOf, type SignalPlan } from "../sim/signals";
 import type { Person } from "../sim/people";
+import { FacilityType } from "../sim/facilities";
 import { lotCenter } from "../sim/zoning";
 
 /** 1 本の道路に同時に走らせる車の数の上限と、交通量 (台/日) あたりの台数。 */
-const MAX_CARS_PER_EDGE = 12;
 const FLOW_PER_CAR = 5;
 /** 空いている道での車の速さ (タイル/秒)。混むと遅くなる。 */
 const FREE_SPEED = 3;
@@ -148,6 +148,10 @@ interface Car {
   pace: number;
   /** 車の持ち主 (住民の番号)。-1 は持ち主なし (行き先はランダム)。 */
   owner: number;
+  /** 外部接続へ帰る途中か (着いたら、車は消える)。 */
+  leaving: boolean;
+  /** もう消えてよい車 (次の更新で外す)。 */
+  gone: boolean;
   /** 止まり続けている時間 (秒)。長すぎると、交差点の譲り合いを一時的に気にしない (渋滞の固まりを解くため)。 */
   stall: number;
   headway: number;
@@ -176,16 +180,6 @@ function frontNodeOf(graph: RoadGraph, c: ZoneCell): number | null {
 /** 混雑の色: 空いている = 緑、容量いっぱい = 黄、それ以上 = 赤。 */
 
 /** 道路を走る車 (箱の車体と窓)・夜のライト・ブレーキのライト・混雑の色。車は住宅と職場を行き来し、前の車との間隔で加速・減速し、行き止まりでは U ターンする (見た目のみ)。 */
-/** 同じ区間・同じ向きの車と重ならない、空いた位置 (0〜1) を探す。見つからなければ null。 */
-function freeSlot(cars: Car[], dir: number, start: number, len: number): number | null {
-  const step = SPAWN_GAP / len;
-  for (let k = 0; k < 60; k++) {
-    const cand = 0.05 + ((start + k * step) % 0.9);
-    if (cars.every((c) => c.dir !== dir || Math.abs(c.p - cand) * len >= SPAWN_GAP)) return cand;
-  }
-  return null;
-}
-
 export class Traffic3D {
   readonly group = new THREE.Group();
   private body: THREE.InstancedMesh;
@@ -205,6 +199,23 @@ export class Traffic3D {
   clock = 0;
   /** 今の時刻 (0〜24)。住民の車は、朝は働き先へ、夜は家へ向かう。 */
   private hour = 12;
+  /** いちばん近い外部接続の入口 (交差点)。 */
+  private nearestEntry(from: number): number | null {
+    const n = this.city.graph.nodes.get(from);
+    if (!n || this.entries.length === 0) return null;
+    let best = this.entries[0]!.node;
+    let bestD = Infinity;
+    for (const e of this.entries) {
+      const m = this.city.graph.nodes.get(e.node)!;
+      const d = Math.hypot(m.x - n.x, m.y - n.y);
+      if (d < bestD) {
+        bestD = d;
+        best = e.node;
+      }
+    }
+    return best;
+  }
+
   /** 今の時刻 (0〜24) を伝える。 */
   setHour(h: number): void {
     this.hour = h;
@@ -212,6 +223,9 @@ export class Traffic3D {
 
   /** 住民ごとの、家と働き先の交差点 (道路の入口)。 */
   private personNodes = new Map<number, { home: number | null; work: number | null }>();
+  /** 外部接続の入口 (道路の入口の交差点と、そこから出る道)。 */
+  private entries: { node: number; edge: number; dir: number }[] = [];
+  private spawnSerial = 1;
   /** 車の持ち主になれる人 (働いている大人)。 */
   private ownerPool: Person[] = [];
   private destKey = "";
@@ -279,6 +293,7 @@ export class Traffic3D {
       this.drawnKey = key;
       this.rebuild();
     }
+    this.cars = this.cars.filter((c) => !c.gone);
     let n = 0;
     let ln = 0;
     let bn = 0;
@@ -497,6 +512,10 @@ export class Traffic3D {
     const reached = this.endNode(car);
     car.p = car.p >= 1 ? 1 : 0;
     if (car.route.length === 0) {
+      if (car.dest === reached && car.leaving) {
+        car.gone = true; // 外部接続へ帰った
+        return;
+      }
       if (car.dest === reached) {
         // 目的地の場所に、ほかの車がいれば、空くまで待つ (重ならないように)
         if (this.parkBlocked(car)) {
@@ -603,6 +622,17 @@ export class Traffic3D {
 
   /** 目的地を決める (住宅と職場を行き来する)。 */
   private nextTrip(car: Car): void {
+    // 持ち主がいない車や、夜の車は、外部接続へ帰る (着いたら消える)
+    const night = this.hour >= 20 || this.hour < 6;
+    if (car.owner < 0 || night) {
+      const exit = this.nearestEntry(this.endNode(car));
+      if (exit !== null) {
+        car.leaving = true;
+        car.dest = exit;
+        car.route = routeTo(this.city.graph, this.endNode(car), car.seed, exit);
+        if (car.route.length > 0 || this.endNode(car) === exit) return;
+      }
+    }
     car.goal = car.goal === "work" ? "home" : "work";
     car.dest = -1;
     this.planFrom(car, this.endNode(car));
@@ -650,6 +680,28 @@ export class Traffic3D {
     this.homeNodes = [];
     this.workNodes = [];
     const graph = this.city.graph;
+    // 外部接続の入口: 外部接続の近くで、外部接続につながった道路の交差点と、そこから出る道
+    this.entries = [];
+    for (const f of this.city.facilities.values()) {
+      if (f.type !== FacilityType.Outside) continue;
+      const cx = f.x + 0.5;
+      const cy = f.y + 0.5;
+      let best: number | null = null;
+      let bestD = Infinity;
+      for (const n of graph.nodes.values()) {
+        if (!this.city.isOutsideNode(n.id)) continue;
+        const d = Math.hypot(n.x - cx, n.y - cy);
+        if (d < bestD) {
+          bestD = d;
+          best = n.id;
+        }
+      }
+      if (best === null) continue;
+      for (const e of graph.edges.values()) {
+        if (e.a !== best && e.b !== best) continue;
+        if (e.oneWay === 0 || (e.a === best ? 1 : -1) === e.oneWay) this.entries.push({ node: best, edge: e.id, dir: e.a === best ? 1 : -1 });
+      }
+    }
     // 住民ごとの家と働き先 (道路の入口)
     this.ownerPool = this.city.people.filter((p) => p.work !== null && p.ageDays >= 18 * 365 && p.ageDays < 65 * 365);
     this.personNodes.clear();
@@ -722,52 +774,46 @@ export class Traffic3D {
         kept.push(c);
       }
     }
-    for (const [id, flow] of city.traffic.flow) {
-      if (!city.graph.edges.has(id)) continue;
-      // 車は、外部接続につながった道路にだけ来る
-      if (!city.isOutsideNode(city.graph.edges.get(id)!.a)) continue;
-      const want = this.carScale <= 0 ? 0 : Math.round(Math.min(MAX_CARS_PER_EDGE, Math.max(1, Math.round(flow / FLOW_PER_CAR))) * this.carScale);
-      const oneWayDir = city.graph.edges.get(id)!.oneWay;
-      const here = kept.filter((c) => c.edge === id);
-      while (here.length > want) {
-        const removed = here.pop()!;
-        kept.splice(kept.indexOf(removed), 1);
-      }
-      for (let i = here.length; i < want && kept.length < MAX_TOTAL_CARS; i++) {
-        const seed = hash2(id, i, 3) * 1e6;
-        const dir = oneWayDir !== 0 ? oneWayDir : i % 2 === 0 ? 1 : -1;
-        const a = city.graph.nodes.get(city.graph.edges.get(id)!.a)!;
-        const b = city.graph.nodes.get(city.graph.edges.get(id)!.b)!;
-        // 同じ車線に、車が重ならない空いた場所へ置く。空きがなければ、この車は置かない
-        const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-        const p = freeSlot(here, dir, hash2(id, i, 4), len);
-        if (p === null) break;
-        const car: Car = {
-          edge: id,
-          p,
-          dir,
-          route: [],
-          seed,
-          color: CAR_COLORS[Math.floor(hash2(id, i, 7) * CAR_COLORS.length)]!,
-          speed: 0,
-          heading: Math.atan2((b.y - a.y) * dir, (b.x - a.x) * dir),
-          dest: -1,
-          goal: hash2(id, i, 9) < 0.5 ? "work" : "home",
-          dwell: 0,
-          uturn: -1,
-          braking: false,
-          claimNode: -1,
-          owner: this.ownerPool.length > 0 ? this.ownerPool[Math.floor(hash2(id, i, 21) * this.ownerPool.length)]!.id : -1,
-          pace: driverOf(hash2(id, i, 11)).pace,
-          stall: 0,
-          headway: driverOf(hash2(id, i, 11)).headway,
-          ax: a.x + (b.x - a.x) * p,
-          ay: a.y + (b.y - a.y) * p,
-        };
-        this.planFrom(car, this.endNode(car));
-        here.push(car);
-        kept.push(car);
-      }
+    // 車は、外部接続の入口から出てくる。台数は、道路の交通量から決まる (上限あり)
+    let flowSum = 0;
+    for (const f of city.traffic.flow.values()) flowSum += f;
+    const target = this.carScale <= 0 ? 0 : Math.min(MAX_TOTAL_CARS, Math.round((flowSum / FLOW_PER_CAR) * this.carScale));
+    for (let n = 0; kept.length < target && n < this.entries.length * 4; n++) {
+      const e = this.entries[this.spawnSerial++ % Math.max(1, this.entries.length)];
+      if (!e) break;
+      const ge = city.graph.edges.get(e.edge);
+      if (!ge) continue;
+      // 入口の場所に、ほかの車がいれば、次の入口を試す (重ならないように)
+      if (kept.some((c) => c.edge === e.edge && c.dir === e.dir && Math.abs(c.p - (e.dir > 0 ? 0 : 1)) * 1 < SPAWN_GAP / 4)) continue;
+      const a2 = city.graph.nodes.get(ge.a)!;
+      const b2 = city.graph.nodes.get(ge.b)!;
+      const seed = hash2(this.spawnSerial, e.edge, 3) * 1e6;
+      const car: Car = {
+        edge: e.edge,
+        p: e.dir > 0 ? 0 : 1,
+        dir: e.dir,
+        route: [],
+        seed,
+        color: CAR_COLORS[Math.floor(hash2(this.spawnSerial, e.edge, 7) * CAR_COLORS.length)]!,
+        speed: 0,
+        heading: Math.atan2((b2.y - a2.y) * e.dir, (b2.x - a2.x) * e.dir),
+        dest: -1,
+        goal: hash2(this.spawnSerial, e.edge, 9) < 0.5 ? "work" : "home",
+        dwell: 0,
+        uturn: -1,
+        braking: false,
+        claimNode: -1,
+        owner: this.ownerPool.length > 0 ? this.ownerPool[Math.floor(hash2(this.spawnSerial, e.edge, 21) * this.ownerPool.length)]!.id : -1,
+        pace: driverOf(hash2(this.spawnSerial, e.edge, 11)).pace,
+        stall: 0,
+        headway: driverOf(hash2(this.spawnSerial, e.edge, 11)).headway,
+        leaving: false,
+        gone: false,
+        ax: e.dir > 0 ? a2.x : b2.x,
+        ay: e.dir > 0 ? a2.y : b2.y,
+      };
+      this.planFrom(car, this.endNode(car));
+      kept.push(car);
     }
     this.cars = kept;
 
