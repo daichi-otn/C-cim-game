@@ -69,7 +69,8 @@ describe("高校・大学とオフィスの需要", () => {
   it("小学校・中学校ではオフィスの需要は変わらない", () => {
     const none = officeDemand();
     expect(none.boost).toBe(0);
-    expect(officeDemand(FacilityType.School).o).toBeLessThanOrEqual(none.o + 0.2); // 幸福度の分だけ
+    // 学校がないと、子どもが学校へ行けず幸福度が下がるので、学校があるほうが需要は下がらない
+    expect(officeDemand(FacilityType.School).o).toBeGreaterThanOrEqual(none.o - 1e-9);
     expect(officeDemand(FacilityType.School).boost).toBe(0);
     expect(officeDemand(FacilityType.MiddleSchool).boost).toBe(0);
   });

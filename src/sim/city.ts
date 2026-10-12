@@ -40,6 +40,7 @@ import {
 import { AMENITY_REACH, LAND_TAX_BONUS, landValueOf } from "./landValue";
 import { agingFactor, isOldEnough, REBUILD_CHANCE } from "./aging";
 import { DISTRICT_COLORS, DISTRICT_MAX_COUNT, DISTRICT_MAX_SIZE, DISTRICT_MIN_SIZE, densityAllowed, districtAt, districtRect, type Allowed, type District, type Greenery } from "./district";
+import { ageMixAt, PENSION_PER_SENIOR, UNSCHOOLED_HAPPINESS_PENALTY } from "./people";
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
@@ -177,6 +178,13 @@ export class City {
   utilities: Utilities = emptyUtilities();
   /** 警察・消防・医療・教育が届いている建物の数 (直近の tick の時点)。 */
   coverage: CoverageStats = emptyCoverage();
+  /** 住民の年齢層 (家ごとの割合から、今の人数で求める)。子どもは学校へ行き、高齢者は年金をもらう。 */
+  children = 0;
+  seniors = 0;
+  /** 学校が届いていない家に住む子どもの数。 */
+  unschooledChildren = 0;
+  /** 学校が届いている住宅の場所 (計算の途中で使う)。 */
+  private schooledCells = new Set<string>();
   /** 幸福度 0〜1。公共サービスが何も届いていなければ中立の 0.5、すべて届いていれば 1。需要に影響する。 */
   happiness = NEUTRAL_HAPPINESS;
   /** ごみの処理量と、建物が出すごみの量 (直近の refresh の時点)。保存はせず、毎日求め直す。 */
@@ -658,6 +666,7 @@ export class City {
    */
   private calcCoverage(): void {
     const stats = emptyCoverage();
+    this.schooledCells.clear();
     const providers = [...this.facilities.values()].filter((f) => FACILITY_SPECS[f.type].coverage !== null && (this.facilityNet.get(f.id) ?? 0) !== 0);
     let buildings = 0;
     let boostSum = 0;
@@ -678,6 +687,7 @@ export class City {
       }
       boostSum += boost * area;
       for (const k of reached) stats[k].covered += area;
+      if (reached.has("education")) this.schooledCells.add(`${c.x},${c.y}`);
       c.env.cared = reached.has("health");
     }
     for (const c of this.zones.cells.values()) {
@@ -691,6 +701,7 @@ export class City {
       this.coverCount.set(`${c.x},${c.y}`, n);
     }
     this.coverage = stats;
+    this.calcAges();
     if (this.devMode) {
       // 公共サービスは、すべての建物に届いているものとする
       for (const k of COVERAGES) stats[k].covered = stats[k].total;
@@ -706,6 +717,26 @@ export class City {
     }
     const mean = COVERAGES.reduce((sum, k) => sum + stats[k].covered / stats[k].total, 0) / COVERAGES.length;
     this.happiness = NEUTRAL_HAPPINESS + (1 - NEUTRAL_HAPPINESS) * mean;
+    // 学校に通えない子どもが多いと、幸福度が下がる
+    if (this.children > 0) this.happiness = Math.max(0, this.happiness - UNSCHOOLED_HAPPINESS_PENALTY * (this.unschooledChildren / this.children));
+  }
+
+  /** 住んでいる人の年齢層を、家ごとの割合から数える。学校が届いていない家の子どもも数える。 */
+  private calcAges(): void {
+    let children = 0;
+    let seniors = 0;
+    let unschooled = 0;
+    for (const c of this.zones.cells.values()) {
+      if (c.zone !== ZoneType.Residential || c.residents <= 0 || c.building === 0) continue;
+      const mix = ageMixAt(this.seed, c.x, c.y);
+      const kids = c.residents * mix.child;
+      children += kids;
+      seniors += c.residents * mix.senior;
+      if (!this.schooledCells.has(`${c.x},${c.y}`)) unschooled += kids;
+    }
+    this.children = children;
+    this.seniors = seniors;
+    this.unschooledChildren = unschooled;
   }
 
   /**
@@ -930,6 +961,8 @@ export class City {
       g.wallet += Math.round(monthlyTax(this.zones.totalsWhere((c) => this.districtOf(c) === g), g.taxRate ?? this._taxRate, season) * boost);
     }
     let expense = Math.round(this.graph.totalUpkeep());
+    // 高齢者の年金は、税金 (市の財布) から出す
+    expense += Math.round(this.seniors * PENSION_PER_SENIOR);
     for (const f of this.facilities.values()) {
       // 地区の中の施設の維持費は、その地区の財布から先に払い、足りない分だけ市の出費になる
       let cost = FACILITY_SPECS[f.type].upkeep;
