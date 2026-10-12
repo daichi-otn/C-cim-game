@@ -2,11 +2,11 @@
 
 ブラウザ上で動く、3D の街づくり経営シミュレーションゲームです。Cities: Skylines のように、道路を引き、区画(ゾーン)を塗り、街を育てていく流れを軽量に再現することを目指しています。
 
-> **公開中です。** https://c-cim-game.netlify.app で、誰でもブラウザで開いて遊べます(インストール不要。パソコン・スマホ・タブレットに対応)。現在の版は v0.49.9 で、街全体を 3D で描いて遊べます。道路・区画・インフラ・公共サービス・経済・交通・環境・天気と季節などの基本は完成しています(ロードマップは下を参照)。今後の内容は変わる可能性があります。
+> **公開中です。** https://daichi-otn.github.io/C-cim-game/ で、誰でもブラウザで開いて遊べます(インストール不要。パソコン・スマホ・タブレットに対応)。現在の版は v0.49.9 で、街全体を 3D で描いて遊べます。道路・区画・インフラ・公共サービス・経済・交通・環境・天気と季節などの基本は完成しています(ロードマップは下を参照)。今後の内容は変わる可能性があります。
 
 ## このプロジェクトについて
 
-- **公開:** Netlify で公開中(サーバーのいらない静的なサイト): https://c-cim-game.netlify.app 。遊ぶだけなら、この URL を開くだけです。ソースは GitHub の `C-cim-game`(公開)にあります
+- **公開:** GitHub Pages で公開中(サーバーのいらない静的なサイト): https://daichi-otn.github.io/C-cim-game/ 。遊ぶだけなら、この URL を開くだけです。ソースは GitHub の `C-cim-game`(公開)にあります
 
 - ブラウザで動作するゲーム(サーバー不要の静的サイト)
 - 販売は行わない個人プロジェクト
@@ -61,11 +61,11 @@ npm run dev
 
 ### 公開(デプロイ)の仕組み
 
-ゲームは Netlify で公開しています(https://c-cim-game.netlify.app)。
+ゲームは GitHub Pages で公開しています(https://daichi-otn.github.io/C-cim-game/)。
 
-- **`daichi-otn/C-cim-game` の `main` ブランチに push すると、自動で公開が更新されます。** Netlify が push を見つけて、`npm run build` でビルドし、できた `dist` を公開します(設定は `netlify.toml`)。1〜2 分で、新しい版になります。
+- **`daichi-otn/C-cim-game` の `main` ブランチに push すると、自動で公開が更新されます。** GitHub Actions (`.github/workflows/pages.yml`) が、`npm run build` でビルドし、できた `dist` を GitHub Pages に公開します。公開先のフォルダ名は、ビルド時の `VITE_BASE` (`/C-cim-game/`) で指定しています。
 - 公開される前に、`npm test`・`npx tsc --noEmit`・`npm run build` が通ることを確かめます。
-- 前の版に戻したいときは、Netlify の画面の「Deploys」から、前のデプロイを選んで「Publish deploy」を押します。
+- 前の版に戻したいときは、前のコミットを `git revert` して push します。
 - 公開用のリポジトリは、履歴を作り直したコピーです。個人情報(メールアドレスなど)が入らないように、作者は GitHub の noreply アドレスにしています。
 
 ### 3D の描画について
