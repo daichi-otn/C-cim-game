@@ -40,7 +40,7 @@ import {
 import { AMENITY_REACH, LAND_TAX_BONUS, landValueOf } from "./landValue";
 import { agingFactor, isOldEnough, REBUILD_CHANCE } from "./aging";
 import { DISTRICT_COLORS, DISTRICT_MAX_COUNT, DISTRICT_MAX_SIZE, DISTRICT_MIN_SIZE, densityAllowed, districtAt, districtRect, type Allowed, type District, type Greenery } from "./district";
-import { ageMixAt, PENSION_PER_SENIOR, UNSCHOOLED_HAPPINESS_PENALTY } from "./people";
+import { ageMixAt, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PENALTY, type HomeSlot, type Person } from "./people";
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
@@ -106,6 +106,9 @@ export interface CityData {
   /** size は省略可能 (昔のデータは 2×2)。 */
   facilities: { id: number; type: number; x: number; y: number; size?: number }[];
   /** 地区。省略可能 (昔のデータは地区なし)。 */
+  /** 住んでいる人 [id, 家のx, 家のy, 年齢 (日), 働き先のx (-1 = なし), 働き先のy]。省略可能 (昔のデータは、読み込んだあと作り直す)。 */
+  people?: [number, number, number, number, number, number][];
+  nextPersonId?: number;
   districts?: { id: number; name: string; color: number; x0: number; y0: number; x1: number; y1: number; taxRate?: number; allowed: boolean[]; wallet: number; greenery?: number }[];
 }
 
@@ -183,6 +186,9 @@ export class City {
   seniors = 0;
   /** 学校が届いていない家に住む子どもの数。 */
   unschooledChildren = 0;
+  /** 住んでいる人を一人ずつ (年齢・家・働き先)。家ごとの人数と合うように、毎日そろえる。 */
+  people: Person[] = [];
+  private nextPersonId = 1;
   /** 学校が届いている住宅の場所 (計算の途中で使う)。 */
   private schooledCells = new Set<string>();
   /** 幸福度 0〜1。公共サービスが何も届いていなければ中立の 0.5、すべて届いていれば 1。需要に影響する。 */
@@ -240,6 +246,8 @@ export class City {
       graph: this.graph.toData(),
       zones: [...this.zones.cells.values()].map((c) => (c.building > 0 ? [c.x, c.y, c.zone, c.building, c.residents, c.density, c.w, c.h, c.built] : [c.x, c.y, c.zone, c.building, c.residents, c.density])),
       facilities: [...this.facilities.values()].map((f) => ({ id: f.id, type: f.type, x: f.x, y: f.y, size: f.size })),
+      people: this.people.map((p) => [p.id, p.home[0], p.home[1], p.ageDays, p.work ? p.work[0] : -1, p.work ? p.work[1] : -1] as [number, number, number, number, number, number]),
+      nextPersonId: this.nextPersonId,
       districts: this.districts.map((g) => ({ id: g.id, name: g.name, color: g.color, x0: g.x0, y0: g.y0, x1: g.x1, y1: g.y1, taxRate: g.taxRate, allowed: [...g.allowed] as Allowed, wallet: g.wallet, greenery: g.greenery })),
     };
   }
@@ -270,6 +278,16 @@ export class City {
     city.money = d.money;
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
+    if (d.people !== undefined) {
+      if (!Array.isArray(d.people) || !isInt(d.nextPersonId ?? 1, 1)) throw new Error("住民のデータが不正です");
+      const seen = new Set<number>();
+      for (const [id, hx, hy, age, wx, wy] of d.people) {
+        if (!isInt(id, 1) || seen.has(id) || !isInt(hx, -1e9, 1e9) || !isInt(hy, -1e9, 1e9) || !isInt(age, 0) || !isInt(wx, -1e9, 1e9) || !isInt(wy, -1e9, 1e9)) throw new Error("住民のデータが不正です");
+        seen.add(id);
+        city.people.push({ id, home: [hx, hy], ageDays: age, work: wx === -1 ? null : [wx, wy] });
+      }
+      city.nextPersonId = d.nextPersonId ?? Math.max(0, ...seen) + 1; // 保存したとおり (次の人の番号を、ずらさない)
+    }
     for (const f of d.facilities) {
       if (!isInt(f.id, 1) || !isInt(f.type, 1, FACILITY_TYPE_MAX) || !isInt(f.x, -1e9, 1e9) || !isInt(f.y, -1e9, 1e9) || city.facilities.has(f.id)) throw new Error("施設のデータが不正です");
       const size = f.size === undefined ? FACILITY_SIZE : f.size; // 大きさのない昔のデータは 2×2
@@ -946,9 +964,26 @@ export class City {
       if (c.zone === ZoneType.Residential && c.residents > 0 && unhealthy(c)) c.residents = Math.max(0, c.residents - lotArea(c)); // 1 マスあたり 1 日 1 人
     }
     this.zones.fillResidents((c) => this.devMode || (this.outsideNets.has(c.net) && !unhealthy(c))); // 開発者モードでは、外部接続がなくても住民が入る
+    // 住んでいる人は、一日ぶん歳をとり、家ごとの人数と合うように、一人ずつそろえる
+    for (const p of this.people) p.ageDays += 1;
+    this.syncPeople();
     this.day++;
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
     if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
+  }
+
+  /** 住んでいる人の一覧を、家ごとの人数 (区画の住民数) と働き先に合わせる。 */
+  private syncPeople(): void {
+    const homes: HomeSlot[] = [];
+    const jobs: [number, number][] = [];
+    for (const c of this.zones.cells.values()) {
+      if (c.building === 0 || c.part !== undefined) continue;
+      if (c.zone === ZoneType.Residential) homes.push({ x: c.x, y: c.y, residents: c.residents });
+      else jobs.push([c.x, c.y]);
+    }
+    const r = reconcilePeople(this.seed, this.people, homes, jobs, this.nextPersonId);
+    this.people = r.people;
+    this.nextPersonId = r.nextId;
   }
 
   private closeMonth(): void {

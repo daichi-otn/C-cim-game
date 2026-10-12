@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageMixAt, PENSION_PER_SENIOR, placeHash, UNSCHOOLED_HAPPINESS_PENALTY } from "../src/sim/people";
+import { ageMixAt, PENSION_PER_SENIOR, personGroupOf, placeHash, reconcilePeople, sampleAgeDays, UNSCHOOLED_HAPPINESS_PENALTY } from "../src/sim/people";
 
 describe("住民の年齢層", () => {
   it("年齢の割合は、合計が 1 で、子どもと高齢者は範囲内", () => {
@@ -22,5 +22,33 @@ describe("住民の年齢層", () => {
     expect(PENSION_PER_SENIOR).toBeGreaterThan(0);
     expect(UNSCHOOLED_HAPPINESS_PENALTY).toBeGreaterThan(0);
     expect(UNSCHOOLED_HAPPINESS_PENALTY).toBeLessThanOrEqual(1);
+  });
+});
+
+describe("住民を一人ずつ作る", () => {
+  it("家ごとの人数に合わせて、人を作る・減らす", () => {
+    const homes = [{ x: 1, y: 1, residents: 3 }, { x: 5, y: 5, residents: 2 }];
+    const jobs: [number, number][] = [[9, 9]];
+    const a = reconcilePeople(42, [], homes, jobs, 1);
+    expect(a.people).toHaveLength(5);
+    expect(a.people.filter((p) => p.home[0] === 1)).toHaveLength(3);
+    const b = reconcilePeople(42, a.people, [{ x: 1, y: 1, residents: 1 }], jobs, a.nextId);
+    expect(b.people).toHaveLength(1);
+  });
+  it("住んでいる人には、年齢と働き先が決まる", () => {
+    const { people } = reconcilePeople(42, [], [{ x: 2, y: 2, residents: 20 }], [[7, 7]], 1);
+    for (const p of people) {
+      expect(p.work).toEqual([7, 7]);
+      expect(p.ageDays).toBeGreaterThan(0);
+    }
+    expect(people.some((p) => personGroupOf(p.ageDays) === "child")).toBe(true);
+    expect(people.some((p) => personGroupOf(p.ageDays) === "senior")).toBe(true);
+  });
+  it("年齢は id から決まるので、いつも同じ", () => {
+    expect(sampleAgeDays(7, [1, 2], 5)).toBe(sampleAgeDays(7, [1, 2], 5));
+  });
+  it("働き先がなければ、働き先は null", () => {
+    const { people } = reconcilePeople(42, [], [{ x: 2, y: 2, residents: 2 }], [], 1);
+    expect(people.every((p) => p.work === null)).toBe(true);
   });
 });
