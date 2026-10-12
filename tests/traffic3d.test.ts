@@ -95,3 +95,17 @@ describe("住民の車", () => {
     if (nodes.home !== null && nodes.home !== t.endNode(car)) expect(car.dest).toBe(nodes.home);
   });
 });
+
+describe("車の数の上限", () => {
+  it("街全体の車は、上限を超えない", () => {
+    const { city, x0, roadY } = setup();
+    city.buildRoad(x0 + 10.5, roadY - 4.5, x0 + 10.5, roadY + 5.5, RoadType.Avenue);
+    for (let i = 0; i < 300; i++) city.tick();
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 5000);
+    city.trafficVersion++;
+    const traffic = new Traffic3D(city, flatRoads);
+    traffic.setCarScale(1);
+    traffic.update(0, 0);
+    expect((traffic as unknown as Internal).cars.length).toBeLessThanOrEqual(400);
+  });
+});

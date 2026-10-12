@@ -31,6 +31,8 @@ const SPAWN_GAP = 0.4;
 const STALL_SEC = 20;
 /** 働く時間 (時)。この間は、住民の車は働き先へ向かう。 */
 const WORK_START = 7;
+/** 街全体の車の数の上限 (画面が重くならないように)。 */
+const MAX_TOTAL_CARS = 400;
 const WORK_END = 18;
 /** 交差点からこの距離 (タイル) より近い車は、信号で止まらない。 */
 const JUNCTION_COMMIT = 1.0;
@@ -210,7 +212,8 @@ export class Traffic3D {
 
   /** 住民ごとの、家と働き先の交差点 (道路の入口)。 */
   private personNodes = new Map<number, { home: number | null; work: number | null }>();
-  private personList: Person[] = [];
+  /** 車の持ち主になれる人 (働いている大人)。 */
+  private ownerPool: Person[] = [];
   private destKey = "";
   /** 住宅の前の交差点と、職場の前の交差点。 */
   private homeNodes: number[] = [];
@@ -648,7 +651,7 @@ export class Traffic3D {
     this.workNodes = [];
     const graph = this.city.graph;
     // 住民ごとの家と働き先 (道路の入口)
-    this.personList = this.city.people;
+    this.ownerPool = this.city.people.filter((p) => p.work !== null && p.ageDays >= 18 * 365 && p.ageDays < 65 * 365);
     this.personNodes.clear();
     for (const p of this.city.people) {
       const home = this.city.zones.cells.get(`${p.home[0]},${p.home[1]}`);
@@ -728,7 +731,7 @@ export class Traffic3D {
         const removed = here.pop()!;
         kept.splice(kept.indexOf(removed), 1);
       }
-      for (let i = here.length; i < want; i++) {
+      for (let i = here.length; i < want && kept.length < MAX_TOTAL_CARS; i++) {
         const seed = hash2(id, i, 3) * 1e6;
         const dir = oneWayDir !== 0 ? oneWayDir : i % 2 === 0 ? 1 : -1;
         const a = city.graph.nodes.get(city.graph.edges.get(id)!.a)!;
@@ -752,7 +755,7 @@ export class Traffic3D {
           uturn: -1,
           braking: false,
           claimNode: -1,
-          owner: this.personList.length > 0 ? this.personList[Math.floor(hash2(id, i, 21) * this.personList.length)]!.id : -1,
+          owner: this.ownerPool.length > 0 ? this.ownerPool[Math.floor(hash2(id, i, 21) * this.ownerPool.length)]!.id : -1,
           pace: driverOf(hash2(id, i, 11)).pace,
           stall: 0,
           headway: driverOf(hash2(id, i, 11)).headway,
