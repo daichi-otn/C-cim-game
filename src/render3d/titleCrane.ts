@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { craneMotion } from "../render/craneMotion";
 
 /**
  * タイトル画面の背景: 夕暮れの街で、タワークレーンがビルを 1 階ずつ組み上げる (3D)。
@@ -207,28 +208,23 @@ export function createTitleCrane(canvas: HTMLCanvasElement): TitleCrane {
   void size;
   return {
     render(seconds: number) {
-      // 作業の周期: 1 階ぶん。床の数は時間で増え、最後まで行くと最初から組み直す
+      // 作業の周期: 1 回の往復ごとに、床が 1 階ふえる。最後まで行くと、組み直す
       const cycles = Math.floor(seconds / CYCLE);
       const p = (seconds % CYCLE) / CYCLE;
       const built = Math.min(cycles % (MAX_FLOORS + 3), MAX_FLOORS);
       floors.forEach((g, i) => (g.visible = i < built));
-      // 旋回: 資材置き場 (右) から、建設中のビルの上 (左) へ運ぶ
-      const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
-      const pickAng = -0.85;
-      const placeAng = 0.5;
-      const ang = p < 0.35 ? pickAng : p < 0.7 ? pickAng + (placeAng - pickAng) * ease : placeAng;
-      slew.rotation.y = ang;
-      // 吊り荷の高さ: 持ち上げて、運んで、下ろす
+      // クレーンの動きは、ゲーム内と同じ (台形の加速・減速、荷の振れ)
+      const m = craneMotion(p);
+      slew.rotation.y = -0.85 + (0.5 + 0.85) * m.slew;
       const top = built * FLOOR_H + 3;
-      const lift = p < 0.2 ? p / 0.2 : p < 0.7 ? 1 : p < 0.92 ? 1 - (p - 0.7) / 0.22 : 0;
-      const hookY = -CRANE_TOP + 9 + lift * (CRANE_TOP - top - 9) * 0.7;
-      const reach = 4 + (JIB - 8) * (0.3 + 0.6 * Math.min(1, Math.abs(Math.sin(ang * 2))));
+      const hookY = -CRANE_TOP + 9 + m.hook * (CRANE_TOP - top - 9) * 0.7;
+      const reach = 6 + 18 * m.trolley;
       trolley.position.set(reach, -0.9, 0);
       wire.position.set(reach, hookY / 2, 0);
       wire.scale.y = -hookY;
-      hook.position.set(reach, hookY - 0.5, 0);
-      load.position.set(reach, hookY - 1.2, 0);
-      load.visible = p < 0.92;
+      hook.position.set(reach, hookY - 0.5, m.sway * 3);
+      load.position.set(reach, hookY - 1.2, m.sway * 3);
+      load.visible = m.loaded;
       // カメラは、ゆっくり寄ったり引いたり
       const drift = Math.sin(seconds * 0.07) * 3;
       camera.position.set(-4 + drift, 26, 92);

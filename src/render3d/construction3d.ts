@@ -292,9 +292,12 @@ export class Construction3D {
     c.pivot.position.set(x + w + 3, top, z - 3);
     c.pivot.rotation.y = c.stock + (c.target - c.stock) * cr.slew;
     const hookY = HOOK_REST + cr.hook * (cut + HOOK_ABOVE_CUT - HOOK_REST);
-    c.hook.position.set(JIB_LEN * 0.8, hookY - top, 0);
+    // 吊り具は腕の上を、塔の近く (取るとき) から先 (置くとき) へ動く。荷は、旋回が止まったあと振れる
+    const reach = JIB_LEN * (0.45 + 0.35 * cr.trolley);
+    const sideways = cr.sway * 3;
+    c.hook.position.set(reach, hookY - top, sideways);
     c.load.visible = cr.loaded;
-    c.load.position.set(JIB_LEN * 0.8, hookY - top - 3.2, 0);
+    c.load.position.set(reach, hookY - top - 3.2, sideways);
     c.load.scale.set(3, 2.6, 3);
   }
 

@@ -5,6 +5,7 @@
  * - クレーン (中・高い建物): 塔のクレーンが、資材を置き場から運んで、建物の上に下ろす。腕は往復する。
  * どちらも、基礎を掘ってから建物が地面から上へ現れ、完成すると本物の建物に切り替わる。
  */
+import { craneMotion } from "../render/craneMotion";
 
 const clamp01 = (v: number) => Math.min(1, Math.max(0, v));
 
@@ -46,6 +47,10 @@ export function basePose(p: number, style: BuildStyle, H: number): ConstructionP
 
 /** クレーンの動き (塔・腕・荷)。 */
 export interface CranePose {
+  /** 吊り具の位置 (腕の上、0 = 塔の近く、1 = 腕の先)。 */
+  trolley: number;
+  /** 荷の振れ (-1〜1)。 */
+  sway: number;
   /** 塔が立つ割合。 */
   tower: number;
   /** 腕の向き: 0 = 置き場、1 = 建物の上。 */
@@ -58,21 +63,15 @@ export interface CranePose {
 
 export function cranePose(p: number): CranePose {
   const x = clamp01(p);
-  // 1 回の往復を、位相 (0〜1) で表す: 0〜0.2 は荷を地面から上げる、0.2〜0.5 は建物の上へ回す、0.5〜0.7 は下ろす、0.7〜1 は空で戻る
-  const phase = (x * LOADS) % 1;
-  const ease = (t: number) => t * t * (3 - 2 * t);
-  const seg = (a: number, b: number) => ease(clamp01((phase - a) / (b - a)));
-  const up = seg(0, 0.2);
-  const turn = seg(0.2, 0.5);
-  const down = seg(0.5, 0.7);
-  const back = seg(0.7, 1);
-  const hook = up - down;
-  const slew = turn - back;
+  // 1 回の往復の動きは craneMotion (台形の加速・減速、荷の振れ) で決まる
+  const m = craneMotion((x * LOADS) % 1);
   return {
     tower: clamp01(x / CRANE_END),
-    slew: Math.min(1, Math.max(0, slew)),
-    hook: Math.min(1, Math.max(0, hook)),
-    loaded: phase >= 0.05 && phase < 0.7,
+    slew: m.slew,
+    trolley: m.trolley,
+    hook: m.hook,
+    sway: m.sway,
+    loaded: m.loaded,
   };
 }
 
