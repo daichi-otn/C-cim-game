@@ -1,3 +1,4 @@
+import { landAt } from "./coast";
 import { fbm } from "./noise";
 
 export const CHUNK_SIZE = 32;
@@ -27,6 +28,8 @@ export interface RegionProfile {
   mountain: number;
   forest: number;
   scale: number;
+  /** 海岸線の地図 (coastData の鍵)。あれば、陸と海はその地図に従う。 */
+  coast?: string;
 }
 
 export const DEFAULT_PROFILE: RegionProfile = { water: 0.4, sand: 0.44, mountain: 0.68, forest: 0.58, scale: 0.02 };
@@ -36,13 +39,13 @@ export const REGION_SEEDS = { japan: 1001, uk: 1002, australia: 1003, newZealand
 
 const REGION_PROFILES = new Map<number, RegionProfile>([
   // 日本: 山が多く、森と海に囲まれた、起伏の大きい地形
-  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.62, forest: 0.52, scale: 0.03 }],
+  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.68, forest: 0.52, scale: 0.03, coast: "japan" }],
   // イギリス: なだらかな丘と、草地と森。山は少ない
-  [REGION_SEEDS.uk, { water: 0.36, sand: 0.4, mountain: 0.82, forest: 0.5, scale: 0.014 }],
+  [REGION_SEEDS.uk, { water: 0.36, sand: 0.4, mountain: 0.82, forest: 0.5, scale: 0.014, coast: "uk" }],
   // オーストラリア: 広く乾いた内陸。水と森が少なく、砂と草地が広がる
-  [REGION_SEEDS.australia, { water: 0.3, sand: 0.42, mountain: 0.86, forest: 0.7, scale: 0.012 }],
+  [REGION_SEEDS.australia, { water: 0.3, sand: 0.42, mountain: 0.86, forest: 0.7, scale: 0.012, coast: "australia" }],
   // ニュージーランド: 海に囲まれた島々と、険しい山
-  [REGION_SEEDS.newZealand, { water: 0.36, sand: 0.4, mountain: 0.62, forest: 0.5, scale: 0.035 }],
+  [REGION_SEEDS.newZealand, { water: 0.36, sand: 0.4, mountain: 0.62, forest: 0.5, scale: 0.035, coast: "newZealand" }],
 ]);
 
 /** 地域の地形の特徴。地図でない (自由なシード) 場合は、標準の地形。 */
@@ -52,9 +55,17 @@ export function profileOf(seed: number): RegionProfile {
 
 /** タイル (tx,ty) の標高 (0..1)。 */
 export function heightAt(seed: number, tx: number, ty: number): number {
-  const scale = profileOf(seed).scale;
-  return fbm(seed, tx * scale, ty * scale, 5);
+  const P = profileOf(seed);
+  const h = fbm(seed, tx * P.scale, ty * P.scale, 5);
+  if (!P.coast) return h;
+  // 海岸線の地図があれば、陸は水より上、海は水より下にする。境目は少しなめらかにつなぐ
+  const t = clamp01((landAt(P.coast, tx, ty) - 0.25) / 0.5);
+  const land = Math.max(h, P.water + 0.03);
+  const sea = Math.min(h, P.water - 0.03);
+  return sea + (land - sea) * (t * t * (3 - 2 * t));
 }
+
+const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /** タイル (tx,ty) の森ノイズ (0..1)。高いほど森になりやすい。 */
 export function forestAt(seed: number, tx: number, ty: number): number {
