@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { RoadType } from "../src/sim/roadTypes";
+import { ZoneType } from "../src/sim/zoning";
 import { Traffic3D } from "../src/render3d/traffic3d";
 import { lanePoint, projectOnSegment } from "../src/render3d/carMotion";
 import type { Roads3D } from "../src/render3d/roads3d";
@@ -62,5 +63,35 @@ describe("交差点での車", () => {
     }
     // 車の長さは 0.3 タイル。0.2 タイルより近づかないこと
     expect(worst).toBeGreaterThan(0.2);
+  });
+});
+
+describe("住民の車", () => {
+  it("昼は働き先へ、夜は家へ向かう", () => {
+    const { city } = setup();
+    for (let i = 0; i < 200; i++) city.tick();
+    const home = [...city.zones.cells.values()].find((c) => c.zone === ZoneType.Residential && c.residents > 0 && c.building > 0 && c.part === undefined);
+    const job = [...city.zones.cells.values()].find((c) => c.zone === ZoneType.Commercial && c.building > 0 && c.part === undefined);
+    expect(home && job).toBeTruthy();
+    city.people = [{ id: 999, home: [home!.x, home!.y], ageDays: 30 * 365, work: [job!.x, job!.y] }];
+    const traffic = new Traffic3D(city, flatRoads);
+    traffic.setCarScale(1);
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
+    city.trafficVersion++;
+    traffic.update(0, 0);
+    const t = traffic as any;
+    const car = (t.cars as any[]).find((c) => c.owner === 999);
+    expect(car).toBeTruthy();
+    const nodes = t.personNodes.get(999);
+    t.setHour(10);
+    car.dest = -1;
+    car.route = [];
+    t.planFrom(car, t.endNode(car));
+    if (nodes.work !== null && nodes.work !== t.endNode(car)) expect(car.dest).toBe(nodes.work);
+    t.setHour(22);
+    car.dest = -1;
+    car.route = [];
+    t.planFrom(car, t.endNode(car));
+    if (nodes.home !== null && nodes.home !== t.endNode(car)) expect(car.dest).toBe(nodes.home);
   });
 });

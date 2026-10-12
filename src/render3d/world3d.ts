@@ -234,6 +234,7 @@ export class World3D {
     }
     this.structures?.setNight(night);
     this.structures?.setSnow(snow);
+    this.traffic?.setHour(f.hour);
     this.traffic?.update(f.simDt, night);
     this.signals?.update(this.traffic?.clock ?? 0);
     this.overlays?.update();

@@ -12,6 +12,7 @@ import type { ZoneCell } from "../sim/zoning";
 import { ZoneType } from "../sim/zoning";
 import { falloff } from "../audio/soundMath";
 import { buildSignalPlan, lightOf, type SignalPlan } from "../sim/signals";
+import type { Person } from "../sim/people";
 import { lotCenter } from "../sim/zoning";
 
 /** 1 本の道路に同時に走らせる車の数の上限と、交通量 (台/日) あたりの台数。 */
@@ -28,6 +29,9 @@ const CAPACITY = 6000;
 const SPAWN_GAP = 0.4;
 /** これだけ止まり続けた車は、交差点の譲り合いと、U ターンの待ちを一時的に気にしない (秒)。 */
 const STALL_SEC = 20;
+/** 働く時間 (時)。この間は、住民の車は働き先へ向かう。 */
+const WORK_START = 7;
+const WORK_END = 18;
 /** 交差点からこの距離 (タイル) より近い車は、信号で止まらない。 */
 const JUNCTION_COMMIT = 1.0;
 /** 前の車を探す距離 (タイル)。 */
@@ -140,6 +144,8 @@ interface Car {
   claimNode: number;
   /** 運転の個性: 速さの好みと、前の車との間隔 (秒)。 */
   pace: number;
+  /** 車の持ち主 (住民の番号)。-1 は持ち主なし (行き先はランダム)。 */
+  owner: number;
   /** 止まり続けている時間 (秒)。長すぎると、交差点の譲り合いを一時的に気にしない (渋滞の固まりを解くため)。 */
   stall: number;
   headway: number;
@@ -195,6 +201,16 @@ export class Traffic3D {
   private planVersion = -1;
   /** 信号の時間 (秒)。ゲームの時間で進む (一時停止中は止まる)。 */
   clock = 0;
+  /** 今の時刻 (0〜24)。住民の車は、朝は働き先へ、夜は家へ向かう。 */
+  private hour = 12;
+  /** 今の時刻 (0〜24) を伝える。 */
+  setHour(h: number): void {
+    this.hour = h;
+  }
+
+  /** 住民ごとの、家と働き先の交差点 (道路の入口)。 */
+  private personNodes = new Map<number, { home: number | null; work: number | null }>();
+  private personList: Person[] = [];
   private destKey = "";
   /** 住宅の前の交差点と、職場の前の交差点。 */
   private homeNodes: number[] = [];
@@ -246,7 +262,7 @@ export class Traffic3D {
       this.planVersion = graph.version;
       this.plan = buildSignalPlan(graph);
     }
-    const destKey = `${city.zones.version}:${graph.version}`;
+    const destKey = `${city.zones.version}:${graph.version}:${city.people.length}`;
     if (destKey !== this.destKey) {
       this.destKey = destKey;
       this.rebuildDestinations();
@@ -591,6 +607,19 @@ export class Traffic3D {
 
   /** いまの交差点から、目的地までの道順を作る。目的地が決まっていなければ、目的の種類 (住宅か職場) から選ぶ。 */
   private planFrom(car: Car, from: number): void {
+    // 持ち主 (住民) がいれば、時刻に合わせて、働き先 (日中) か家 (夜) を目的地にする
+    if (car.dest < 0 && car.owner >= 0) {
+      const nodes = this.personNodes.get(car.owner);
+      const target = nodes ? (this.hour >= WORK_START && this.hour < WORK_END ? nodes.work : nodes.home) : null;
+      if (target !== null && target !== undefined && target !== from) {
+        const route = routeTo(this.city.graph, from, car.seed, target);
+        if (route.length > 0) {
+          car.dest = target;
+          car.route = route;
+          return;
+        }
+      }
+    }
     // 目的地が決まっていなければ、行けるところを選ぶ (行けない場所は、何度か選び直す)
     if (car.dest < 0) {
       const list = car.goal === "work" ? this.workNodes : this.homeNodes;
@@ -618,6 +647,17 @@ export class Traffic3D {
     this.homeNodes = [];
     this.workNodes = [];
     const graph = this.city.graph;
+    // 住民ごとの家と働き先 (道路の入口)
+    this.personList = this.city.people;
+    this.personNodes.clear();
+    for (const p of this.city.people) {
+      const home = this.city.zones.cells.get(`${p.home[0]},${p.home[1]}`);
+      const work = p.work ? this.city.zones.cells.get(`${p.work[0]},${p.work[1]}`) : undefined;
+      this.personNodes.set(p.id, {
+        home: home ? frontNodeOf(graph, home) : null,
+        work: work ? frontNodeOf(graph, work) : null,
+      });
+    }
     for (const c of this.city.zones.cells.values()) {
       if (c.building === 0 || c.part !== undefined || !c.served) continue;
       if (c.zone === ZoneType.Residential) {
@@ -712,6 +752,7 @@ export class Traffic3D {
           uturn: -1,
           braking: false,
           claimNode: -1,
+          owner: this.personList.length > 0 ? this.personList[Math.floor(hash2(id, i, 21) * this.personList.length)]!.id : -1,
           pace: driverOf(hash2(id, i, 11)).pace,
           stall: 0,
           headway: driverOf(hash2(id, i, 11)).headway,
