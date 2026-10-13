@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { valueNoise } from "../sim/noise";
 import { CHUNK_SIZE, heightAt, profileOf } from "../sim/terrain";
 import { renderTerrainTexture, resolutionFor } from "./terrainTexture";
 
@@ -33,7 +34,9 @@ export function groundHeight(seed: number, wx: number, wy: number): number {
   // 山: 標高が高いほど、急に盛り上がる (ふもとはなだらか、高いところは峰になる)
   if (h > P.mountain - 0.03) {
     const t = h - (P.mountain - 0.03);
-    return (t * 380 + t * t * 2600) * smooth(0, 0.04, t);
+    // 山肌の細かな凹凸 (尾根と谷)。山の上ほど大きく見える
+    const ridge = (valueNoise(seed ^ 0x2c1b3c6d, wx * 0.04, wy * 0.04) - 0.5) * 2;
+    return (t * 380 + t * t * 2600 + ridge * 30 * smooth(0, 0.08, t)) * smooth(0, 0.04, t);
   }
   return 0;
 }

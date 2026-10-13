@@ -76,6 +76,8 @@ export function renderTerrainTexture(seed: number, cx: number, cy: number, res: 
   // 標高 H・森ノイズ F・標高の勾配 GX/GY を、タイル中心を格子点として用意する
   const H = new Float32Array(GRID_W * GRID_W);
   const F = new Float32Array(GRID_W * GRID_W);
+  // 斜面の急さ (タイルあたりの標高の差)。急な斜面は、土や岩肌が見えるようにする
+  const S = new Float32Array(GRID_W * GRID_W);
   const at = (i: number, j: number) => (j - GRID_MIN) * GRID_W + (i - GRID_MIN);
   const x0 = cx * CHUNK_SIZE;
   const y0 = cy * CHUNK_SIZE;
@@ -83,6 +85,13 @@ export function renderTerrainTexture(seed: number, cx: number, cy: number, res: 
     for (let i = GRID_MIN; i < GRID_MIN + GRID_W; i++) {
       H[at(i, j)] = heightAt(seed, x0 + i, y0 + j);
       F[at(i, j)] = forestAt(seed, x0 + i, y0 + j);
+    }
+  }
+  for (let j = GRID_MIN + 1; j < GRID_MIN + GRID_W - 1; j++) {
+    for (let i = GRID_MIN + 1; i < GRID_MIN + GRID_W - 1; i++) {
+      const dx = H[at(i + 1, j)]! - H[at(i - 1, j)]!;
+      const dy = H[at(i, j + 1)]! - H[at(i, j - 1)]!;
+      S[at(i, j)] = Math.hypot(dx, dy) * 0.5;
     }
   }
 
@@ -105,11 +114,14 @@ export function renderTerrainTexture(seed: number, cx: number, cy: number, res: 
       const fx = gu - i0;
       const h = bil(H, i0, j0, fx, fy);
       const f = bil(F, i0, j0, fx, fy);
+      const slope = bil(S, i0, j0, fx, fy);
       const n = hash2(noiseSeed, cx * size + ppx, cy * size + py) - 0.5; // 画素ごとのざらつき
       const wx = x0 + ppx / res;
       const wy = y0 + py / res;
-      // 中くらいの大きさのまだら (草むら・岩肌の濃淡)
+      // 中くらいの大きさのまだら (草むら・岩肌の濃淡)。大きなむらと、細かい草の粒も重ねる
       const mottle = valueNoise(noiseSeed, wx * 2.6, wy * 2.6) - 0.5;
+      const patch = valueNoise(noiseSeed + 17, wx * 0.45, wy * 0.45) - 0.5;
+      const blade = valueNoise(noiseSeed + 29, wx * 11, wy * 11) - 0.5;
       let grain = 0.05;
 
       if (h < P.water) {
@@ -133,10 +145,20 @@ export function renderTerrainTexture(seed: number, cx: number, cy: number, res: 
         const dry = smoothstep(0.5, 0.66, h);
         setMix(PAL.grass, PAL.grassDry, dry * 0.75);
         mixIn(PAL.grassDark, clamp01((f - 0.4) * 1.6) * 0.5);
-        pr *= 1 + mottle * 0.16; pg *= 1 + mottle * 0.16; pb *= 1 + mottle * 0.16;
+        const tone = 1 + mottle * 0.16 + patch * 0.14 + blade * 0.06;
+        pr *= tone; pg *= tone; pb *= tone;
+        // 急な斜面は、草が薄くなり土や岩が見える
+        const steep = smoothstep(0.012, 0.03, slope);
+        mixIn(PAL.earth, steep * 0.4);
         // 森の地面
         const forest = smoothstep(P.forest - 0.04, P.forest + 0.04, f) * (1 - smoothstep(P.mountain - 0.03, P.mountain, h));
         mixIn(PAL.forestGround, forest);
+        // 森の地面の落ち葉 (暗い斑と明るい斑)
+        if (forest > 0) {
+          const litter = valueNoise(noiseSeed + 43, wx * 5.5, wy * 5.5) - 0.5;
+          const k2 = 1 + litter * 0.35;
+          pr *= k2; pg *= k2; pb *= k2;
+        }
         // 山: 土色 → 岩肌 → 雪
         const mt = smoothstep(P.mountain - 0.035, P.mountain + 0.01, h);
         if (mt > 0) {
