@@ -1,4 +1,5 @@
-import { landAt } from "./coast";
+import { landAt, lonLatOfTile } from "./coast";
+import { elevationAt } from "./elevation";
 import { fbm } from "./noise";
 
 export const CHUNK_SIZE = 32;
@@ -30,6 +31,8 @@ export interface RegionProfile {
   scale: number;
   /** 海岸線の地図 (coastData の鍵)。あれば、陸と海はその地図に従う。 */
   coast?: string;
+  /** 実際の標高 (elevation.ts) を使うか。使うときは、山の高さを実際の標高から決める。 */
+  elevation?: boolean;
 }
 
 export const DEFAULT_PROFILE: RegionProfile = { water: 0.4, sand: 0.44, mountain: 0.68, forest: 0.58, scale: 0.02 };
@@ -39,7 +42,7 @@ export const REGION_SEEDS = { japan: 1001, uk: 1002, australia: 1003, newZealand
 
 const REGION_PROFILES = new Map<number, RegionProfile>([
   // 日本: 山が多く、森と海に囲まれた、起伏の大きい地形
-  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.68, forest: 0.52, scale: 0.03, coast: "japan" }],
+  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.68, forest: 0.52, scale: 0.03, coast: "japan", elevation: true }],
   // イギリス: なだらかな丘と、草地と森。山は少ない
   [REGION_SEEDS.uk, { water: 0.36, sand: 0.4, mountain: 0.82, forest: 0.5, scale: 0.014, coast: "uk" }],
   // オーストラリア: 広く乾いた内陸。水と森が少なく、砂と草地が広がる
@@ -58,10 +61,17 @@ export function heightAt(seed: number, tx: number, ty: number): number {
   const P = profileOf(seed);
   const h = fbm(seed, tx * P.scale, ty * P.scale, 5);
   if (!P.coast) return h;
+  // 実際の標高があれば、標高 1000 m で山の境目になるように、陸の高さを決める (細かな凹凸は noise で足す)
+  let base = h;
+  if (P.elevation) {
+    const p = lonLatOfTile(P.coast, tx, ty)!;
+    const m = Math.max(0, elevationAt(p.lon, p.lat));
+    base = P.sand + 0.01 + (m / 1000) * (P.mountain - P.sand - 0.01) + (h - 0.5) * 0.03;
+  }
   // 海岸線の地図があれば、陸は水より上、海は水より下にする。境目は少しなめらかにつなぐ
   const t = clamp01((landAt(P.coast, tx, ty) - 0.25) / 0.5);
-  const land = Math.max(h, P.water + 0.03);
-  const sea = Math.min(h, P.water - 0.03);
+  const land = Math.max(base, P.water + 0.03);
+  const sea = Math.min(base, P.water - 0.03);
   return sea + (land - sea) * (t * t * (3 - 2 * t));
 }
 
