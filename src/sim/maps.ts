@@ -15,7 +15,7 @@ export const MAPS: readonly MapPreset[] = [
   { id: "islands", name: "島と入り江", description: "水が多く、陸地が入り組む。給水は楽だが土地が限られる。", seed: 42 },
   { id: "valley", name: "山あいの谷", description: "山が多く、平地が限られる。計画的な街づくりが必要。", seed: 17 },
   { id: "forest", name: "深い森", description: "森が広がる。道路は通せるが、見通しは悪い。", seed: 2025 },
-  { id: "japan", name: "日本", description: "実際の標高をもとにした地形。山脈は中央に連なり、平地は海沿いと盆地に広がる。海に囲まれ、街の密度を上げやすい。", seed: REGION_SEEDS.japan },
+  { id: "japan", name: "日本", description: "実際の標高と海岸線をもとにした地形。1 タイルは 8 m (実際の縮尺)。東京近くから始まり、山脈は中央に連なる。", seed: REGION_SEEDS.japan },
   { id: "uk", name: "イギリス", description: "なだらかな丘と草地。森が点在し、山は少ない。水は少なめで、広く街を作れる。", seed: REGION_SEEDS.uk },
   { id: "australia", name: "オーストラリア", description: "広く乾いた内陸。水と森が少なく、砂と草地が広がる。水辺に街を作る工夫が必要。", seed: REGION_SEEDS.australia },
   { id: "newzealand", name: "ニュージーランド", description: "海に囲まれた島々と、険しい山。陸地は細長く、水辺と山の間に街が広がる。", seed: REGION_SEEDS.newZealand },

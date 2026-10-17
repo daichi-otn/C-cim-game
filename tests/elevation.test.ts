@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { elevationAt } from "../src/sim/elevation";
-import { lonLatOfTile } from "../src/sim/coast";
+import { lonLatOfTile, tilesPerDegOf } from "../src/sim/coast";
 import { REGION_SEEDS, Tile, tileAt } from "../src/sim/terrain";
 
 /** 経緯度の地点に対応するタイル座標 (日本の地図の上で)。 */
 function tileOf(lon: number, lat: number): { tx: number; ty: number } {
   const o = lonLatOfTile("japan", 0, 0)!;
-  const tpd = 48;
+  const tpd = tilesPerDegOf("japan");
   return {
     tx: Math.round((lon - o.lon) * tpd * Math.cos((lat * Math.PI) / 180)),
     ty: Math.round((o.lat - lat) * tpd),

@@ -13,7 +13,8 @@ const CELL = 0.1; // 格子の 1 マスの大きさ (度)
 // 地域ごとに、対象の国と、範囲 (経度・緯度の中心の近く) の島だけを使う。遠くの小さな島は除く。
 // tpd は、緯度 1 度あたりのタイル数 (1 タイル = 1/tpd 度)。細長い国は、街が入るように細かくする。
 const REGIONS = [
-  { key: "japan", admin: "Japan", box: [122, 20, 150, 50], tpd: 48 },
+  // 日本: 1 タイル = 8 m (ゲームの縮尺)。原点は東京 (街づくりは、ここから始まる)
+  { key: "japan", admin: "Japan", box: [122, 20, 150, 50], tpd: 13915, origin: [139.7, 35.7] },
   { key: "uk", admin: "United Kingdom", box: [-9, 49, 2.5, 61], tpd: 24 },
   { key: "australia", admin: "Australia", box: [112, -45, 155, -10], tpd: 24 },
   { key: "newZealand", admin: "New Zealand", box: [165, -48, 180, -33], tpd: 48 },
@@ -83,7 +84,7 @@ for (const r of REGIONS) {
       }
     }
   }
-  out[r.key] = { west, north, w, h, tpd: r.tpd, bits: Buffer.from(bytes).toString("base64") };
+  out[r.key] = { west, north, w, h, tpd: r.tpd, ...(r.origin ? { originLon: r.origin[0], originLat: r.origin[1] } : {}), bits: Buffer.from(bytes).toString("base64") };
   console.log(`${r.key}: ${w}×${h} マス, 陸 ${land} マス, 範囲 ${west}..${(west + w * CELL).toFixed(1)}E, ${south.toFixed(1)}..${north}N`);
 }
 
@@ -103,6 +104,9 @@ export interface CoastGrid {
   h: number;
   /** 緯度 1 度あたりのタイル数。 */
   tpd: number;
+  /** 原点の経度・緯度 (省略時は格子の中心)。 */
+  originLon?: number;
+  originLat?: number;
   /** 陸のビットを、base64 で持つ。 */
   bits: string;
 }

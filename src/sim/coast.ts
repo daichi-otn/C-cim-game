@@ -23,8 +23,8 @@ function decode(key: string): Decoded | null {
   const d: Decoded = {
     grid,
     land: bytes,
-    lonC: grid.west + (grid.w * COAST_CELL_DEG) / 2,
-    latC: grid.north - (grid.h * COAST_CELL_DEG) / 2,
+    lonC: grid.originLon ?? grid.west + (grid.w * COAST_CELL_DEG) / 2,
+    latC: grid.originLat ?? grid.north - (grid.h * COAST_CELL_DEG) / 2,
   };
   cache.set(key, d);
   return d;
