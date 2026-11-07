@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { elevationAt } from "../src/sim/elevation";
+import { elevationAt, regionalElevationAt } from "../src/sim/elevation";
 import { lonLatOfTile, tilesPerDegOf } from "../src/sim/coast";
 import { REGION_SEEDS, Tile, tileAt } from "../src/sim/terrain";
 
@@ -28,5 +28,20 @@ describe("実際の標高 (日本)", () => {
 
   it("地図の範囲の外は海", () => {
     expect(elevationAt(160, 35)).toBeLessThan(0);
+  });
+});
+
+describe("実際の標高 (地域マップ)", () => {
+  it("英国・豪州・NZにも地域別の標高格子がある", () => {
+    expect(regionalElevationAt("uk", -3, 55)).not.toBeNull();
+    expect(regionalElevationAt("australia", 135, -25)).not.toBeNull();
+    expect(regionalElevationAt("newZealand", 176, -39)).not.toBeNull();
+  });
+
+  it("標高の分布が地域ごとに平坦ではない", () => {
+    const samples = (region: string, points: [number, number][]) => points.map(([lon, lat]) => regionalElevationAt(region, lon, lat));
+    expect(new Set(samples("uk", [[-3, 50], [-3, 57], [0, 55]])).size).toBeGreaterThan(1);
+    expect(new Set(samples("australia", [[115, -20], [135, -25], [150, -35]])).size).toBeGreaterThan(1);
+    expect(new Set(samples("newZealand", [[170, -45], [176, -39], [175, -37]])).size).toBeGreaterThan(1);
   });
 });

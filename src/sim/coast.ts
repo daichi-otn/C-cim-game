@@ -20,11 +20,12 @@ function decode(key: string): Decoded | null {
   const grid = COAST_GRIDS[key];
   if (!grid) return null;
   const bytes = Uint8Array.from(atob(grid.bits), (c) => c.charCodeAt(0));
+  const cell = grid.cell ?? COAST_CELL_DEG;
   const d: Decoded = {
     grid,
     land: bytes,
-    lonC: grid.originLon ?? grid.west + (grid.w * COAST_CELL_DEG) / 2,
-    latC: grid.originLat ?? grid.north - (grid.h * COAST_CELL_DEG) / 2,
+    lonC: grid.originLon ?? grid.west + (grid.w * cell) / 2,
+    latC: grid.originLat ?? grid.north - (grid.h * cell) / 2,
   };
   cache.set(key, d);
   return d;
@@ -60,8 +61,9 @@ export function landAt(key: string, tx: number, ty: number): number {
   const d = decode(key);
   if (!d) return 1;
   const p = lonLatOfTile(key, tx, ty)!;
-  const gx = (p.lon - d.grid.west) / COAST_CELL_DEG - 0.5;
-  const gy = (d.grid.north - p.lat) / COAST_CELL_DEG - 0.5;
+  const cell = d.grid.cell ?? COAST_CELL_DEG;
+  const gx = (p.lon - d.grid.west) / cell - 0.5;
+  const gy = (d.grid.north - p.lat) / cell - 0.5;
   const i0 = Math.floor(gx);
   const j0 = Math.floor(gy);
   const fx = gx - i0;

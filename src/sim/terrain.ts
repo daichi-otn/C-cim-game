@@ -1,5 +1,5 @@
 import { landAt, lonLatOfTile } from "./coast";
-import { elevationAt } from "./elevation";
+import { elevationAt, regionalElevationAt } from "./elevation";
 import { fbm } from "./noise";
 
 export const CHUNK_SIZE = 32;
@@ -33,6 +33,8 @@ export interface RegionProfile {
   coast?: string;
   /** 実際の標高 (elevation.ts) を使うか。使うときは、山の高さを実際の標高から決める。 */
   elevation?: boolean;
+  /** 地域ごとの実際の標高データの鍵。 */
+  elevationKey?: string;
 }
 
 export const DEFAULT_PROFILE: RegionProfile = { water: 0.4, sand: 0.44, mountain: 0.68, forest: 0.58, scale: 0.02 };
@@ -42,13 +44,13 @@ export const REGION_SEEDS = { japan: 1001, uk: 1002, australia: 1003, newZealand
 
 const REGION_PROFILES = new Map<number, RegionProfile>([
   // 日本: 山が多く、森と海に囲まれた、起伏の大きい地形
-  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.68, forest: 0.52, scale: 0.03, coast: "japan", elevation: true }],
+  [REGION_SEEDS.japan, { water: 0.42, sand: 0.45, mountain: 0.68, forest: 0.52, scale: 0.03, coast: "japan", elevation: true, elevationKey: "japan" }],
   // イギリス: なだらかな丘と、草地と森。山は少ない
-  [REGION_SEEDS.uk, { water: 0.36, sand: 0.4, mountain: 0.82, forest: 0.5, scale: 0.014, coast: "uk" }],
+  [REGION_SEEDS.uk, { water: 0.36, sand: 0.4, mountain: 0.82, forest: 0.5, scale: 0.014, coast: "uk", elevationKey: "uk" }],
   // オーストラリア: 広く乾いた内陸。水と森が少なく、砂と草地が広がる
-  [REGION_SEEDS.australia, { water: 0.3, sand: 0.42, mountain: 0.86, forest: 0.7, scale: 0.012, coast: "australia" }],
+  [REGION_SEEDS.australia, { water: 0.3, sand: 0.42, mountain: 0.86, forest: 0.7, scale: 0.012, coast: "australia", elevationKey: "australia" }],
   // ニュージーランド: 海に囲まれた島々と、険しい山
-  [REGION_SEEDS.newZealand, { water: 0.36, sand: 0.4, mountain: 0.62, forest: 0.5, scale: 0.035, coast: "newZealand" }],
+  [REGION_SEEDS.newZealand, { water: 0.36, sand: 0.4, mountain: 0.62, forest: 0.5, scale: 0.035, coast: "newZealand", elevationKey: "newZealand" }],
 ]);
 
 /** 地域の地形の特徴。地図でない (自由なシード) 場合は、標準の地形。 */
@@ -63,9 +65,9 @@ export function heightAt(seed: number, tx: number, ty: number): number {
   if (!P.coast) return h;
   // 実際の標高があれば、標高 1000 m で山の境目になるように、陸の高さを決める (細かな凹凸は noise で足す)
   let base = h;
-  if (P.elevation) {
+  if (P.elevation || P.elevationKey) {
     const p = lonLatOfTile(P.coast, tx, ty)!;
-    const m = Math.max(0, elevationAt(p.lon, p.lat));
+    const m = Math.max(0, P.elevationKey === "japan" ? elevationAt(p.lon, p.lat) : regionalElevationAt(P.elevationKey!, p.lon, p.lat) ?? 0);
     base = P.sand + 0.01 + (m / 1000) * (P.mountain - P.sand - 0.01) + (h - 0.5) * 0.03;
   }
   // 海岸線の地図があれば、陸は水より上、海は水より下にする。境目は少しなめらかにつなぐ

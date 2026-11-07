@@ -8,16 +8,18 @@ import { dirname, join } from "node:path";
 const input = process.argv[2];
 if (!input) throw new Error("GeoJSON のパスを指定してください");
 
-const CELL = 0.1; // 格子の 1 マスの大きさ (度)
+const DEFAULT_CELL = 0.1; // 古い地域データの既定値 (度)
 
 // 地域ごとに、対象の国と、範囲 (経度・緯度の中心の近く) の島だけを使う。遠くの小さな島は除く。
 // tpd は、緯度 1 度あたりのタイル数 (1 タイル = 1/tpd 度)。細長い国は、街が入るように細かくする。
 const REGIONS = [
   // 日本: 1 タイル = 8 m (ゲームの縮尺)。原点は東京 (街づくりは、ここから始まる)
-  { key: "japan", admin: "Japan", box: [122, 20, 150, 50], tpd: 13915, origin: [139.7, 35.7] },
-  { key: "uk", admin: "United Kingdom", box: [-9, 49, 2.5, 61], tpd: 24 },
-  { key: "australia", admin: "Australia", box: [112, -45, 155, -10], tpd: 24 },
-  { key: "newZealand", admin: "New Zealand", box: [165, -48, 180, -33], tpd: 48 },
+  { key: "japan", admin: "Japan", box: [122, 20, 150, 50], tpd: 13915, cell: 0.05, origin: [139.7, 35.7] },
+  // 1 タイルが約 4.6 km。0.05 度 (約 5 km) なら、海岸線の段差が目立ちにくい。
+  { key: "uk", admin: "United Kingdom", box: [-9, 49, 2.5, 61], tpd: 24, cell: 0.05 },
+  { key: "australia", admin: "Australia", box: [112, -45, 155, -10], tpd: 24, cell: 0.05 },
+  // NZ は 1 タイル約 2.3 kmなので、0.025 度 (約 2.8 km) まで細かくする。
+  { key: "newZealand", admin: "New Zealand", box: [165, -48, 180, -33], tpd: 48, cell: 0.025 },
 ];
 
 const geo = JSON.parse(readFileSync(input, "utf8"));
@@ -31,6 +33,7 @@ function ringsOf(feature) {
 
 const out = {};
 for (const r of REGIONS) {
+  const CELL = r.cell ?? DEFAULT_CELL;
   const feats = geo.features.filter((f) => f.properties.ADMIN === r.admin);
   if (feats.length === 0) throw new Error(`見つからない: ${r.admin}`);
   // 箱の中心にある多角形だけ使う (遠くの島を除く)
@@ -84,7 +87,7 @@ for (const r of REGIONS) {
       }
     }
   }
-  out[r.key] = { west, north, w, h, tpd: r.tpd, ...(r.origin ? { originLon: r.origin[0], originLat: r.origin[1] } : {}), bits: Buffer.from(bytes).toString("base64") };
+  out[r.key] = { west, north, w, h, cell: CELL, tpd: r.tpd, ...(r.origin ? { originLon: r.origin[0], originLat: r.origin[1] } : {}), bits: Buffer.from(bytes).toString("base64") };
   console.log(`${r.key}: ${w}×${h} マス, 陸 ${land} マス, 範囲 ${west}..${(west + w * CELL).toFixed(1)}E, ${south.toFixed(1)}..${north}N`);
 }
 
@@ -92,9 +95,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const target = join(here, "..", "src", "sim", "coastData.ts");
 const body = `// 自動生成: scripts/build-coast.mjs。編集しないこと。
 // 出典: Natural Earth 1:50m Admin 0 – Countries (パブリックドメイン) https://www.naturalearthdata.com/
-// 各地域は、0.1 度の格子に陸 (ビット 1) と海 (ビット 0) を、行ごと (北から南)・列ごと (西から東) に、LSB から詰めて持つ。
+// 各地域は、地域の縮尺に合わせた格子に陸 (ビット 1) と海 (ビット 0) を、行ごと (北から南)・列ごと (西から東) に、LSB から詰めて持つ。
 
-export const COAST_CELL_DEG = ${CELL};
+export const COAST_CELL_DEG = ${DEFAULT_CELL};
 
 export interface CoastGrid {
   /** 格子の左端の経度・上端の緯度 (度)。 */
@@ -102,6 +105,8 @@ export interface CoastGrid {
   north: number;
   w: number;
   h: number;
+  /** 格子の 1 マスの大きさ (度)。古いデータでは既定値を使う。 */
+  cell?: number;
   /** 緯度 1 度あたりのタイル数。 */
   tpd: number;
   /** 原点の経度・緯度 (省略時は格子の中心)。 */
