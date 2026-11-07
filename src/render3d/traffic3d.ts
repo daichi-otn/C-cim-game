@@ -30,10 +30,8 @@ const SPAWN_GAP = 0.4;
 /** これだけ止まり続けた車は、交差点の譲り合いと、U ターンの待ちを一時的に気にしない (秒)。 */
 const STALL_SEC = 20;
 /** 働く時間 (時)。この間は、住民の車は働き先へ向かう。 */
-const WORK_START = 7;
 /** 街全体の車の数の上限 (画面が重くならないように)。 */
 const MAX_TOTAL_CARS = 400;
-const WORK_END = 18;
 /** 交差点からこの距離 (タイル) より近い車は、信号で止まらない。 */
 const JUNCTION_COMMIT = 1.0;
 /** 前の車を探す距離 (タイル)。 */
@@ -57,13 +55,19 @@ interface Step {
 }
 
 /** 走っている 1 台。edge の上の位置 p (0 = a 端、1 = b 端) と、進む向き dir、これから通る道順 (route)。 */
-interface Car {
-  edge: number;
-  p: number;
-  dir: number;
-  route: Step[];
-  seed: number;
-  color: number;
+export type CarPurpose = "commute" | "shopping" | "return" | "external";
+
+export function purposeAtHour(hour: number): CarPurpose {
+  const h = ((hour % 24) + 24) % 24;
+  if (h >= 11.5 && h < 13.5) return "shopping";
+  if (h >= 6 && h < 18) return "commute";
+  return "return";
+}
+
+/** ゲーム内の時刻で、次の指定時刻まで車を停めておく秒数 (昼夜の1周は150秒)。 */
+function secondsUntilHour(now: number, target: number): number {
+  const delta = ((target - now) % 24 + 24) % 24;
+  return delta * (150 / 24);
 }
 
 /**
@@ -135,8 +139,8 @@ interface Car {
   heading: number;
   /** 行き先 (交差点)。-1 は、まだ決めていない。 */
   dest: number;
-  /** いまの目的: 職場へ行く (work) か、住宅へ帰る (home) か。 */
-  goal: "work" | "home";
+  /** いまの目的。住民は通勤・昼の買い物・帰宅、外部車は街への用事を持つ。 */
+  purpose: CarPurpose;
   /** 目的地で止まっている残りの時間 (秒)。0 なら走る。 */
   dwell: number;
   /** U ターンの進み (秒)。-1 なら、U ターンしていない。 */
@@ -232,6 +236,7 @@ export class Traffic3D {
   /** 住宅の前の交差点と、職場の前の交差点。 */
   private homeNodes: number[] = [];
   private workNodes: number[] = [];
+  private shoppingNodes: number[] = [];
   /** 交通量が変わったときの、車の数の倍率。 */
   private carScale = 1;
   /** 混雑の色を道路に重ねるか。 */
@@ -528,7 +533,7 @@ export class Traffic3D {
         if (car.claimNode >= 0 && this.nodeHolder.get(car.claimNode) === car) this.nodeHolder.delete(car.claimNode);
         if (this.nodeHolder.get(reached) === car) this.nodeHolder.delete(reached);
         car.claimNode = -1;
-        car.dwell = DWELL_MIN + (DWELL_MAX - DWELL_MIN) * hash2(car.seed, reached, this.carSerial++);
+        car.dwell = this.dwellFor(car);
         car.speed = 0;
         return;
       }
@@ -572,6 +577,14 @@ export class Traffic3D {
     car.p = step.dir > 0 ? 0 : 1;
     // 次の区間へ進んだので、その先の道順が要る (route は次の区間より先の分)
     if (car.route.length === 0 && car.dest !== -1) this.planFrom(car, this.endNode(car));
+  }
+
+  /** 目的地での滞在時間。職場・店・自宅を同じ短い停止時間にしない。 */
+  private dwellFor(car: Car): number {
+    if (car.owner >= 0 && car.purpose === "commute") return Math.max(DWELL_MIN, secondsUntilHour(this.hour, this.hour < 11.5 ? 11.5 : 18));
+    if (car.owner >= 0 && car.purpose === "shopping") return 4 + 10 * hash2(car.seed, this.carSerial++, 41);
+    if (car.owner >= 0 && car.purpose === "return") return Math.max(DWELL_MIN, secondsUntilHour(this.hour, 6));
+    return DWELL_MIN + (DWELL_MAX - DWELL_MIN) * hash2(car.seed, car.edge, this.carSerial++);
   }
 
   /** 止まる場所 (区間の端) に、同じ車線で車がいるか。 */
@@ -622,9 +635,8 @@ export class Traffic3D {
 
   /** 目的地を決める (住宅と職場を行き来する)。 */
   private nextTrip(car: Car): void {
-    // 持ち主がいない車や、夜の車は、外部接続へ帰る (着いたら消える)
-    const night = this.hour >= 20 || this.hour < 6;
-    if (car.owner < 0 || night) {
+    // 持ち主のない車は外部から来た車として、用事を済ませたら入口へ帰る。
+    if (car.owner < 0) {
       const exit = this.nearestEntry(this.endNode(car));
       if (exit !== null) {
         car.leaving = true;
@@ -633,17 +645,19 @@ export class Traffic3D {
         if (car.route.length > 0 || this.endNode(car) === exit) return;
       }
     }
-    car.goal = car.goal === "work" ? "home" : "work";
+    car.leaving = false;
+    car.purpose = purposeAtHour(this.hour);
     car.dest = -1;
     this.planFrom(car, this.endNode(car));
   }
 
   /** いまの交差点から、目的地までの道順を作る。目的地が決まっていなければ、目的の種類 (住宅か職場) から選ぶ。 */
   private planFrom(car: Car, from: number): void {
-    // 持ち主 (住民) がいれば、時刻に合わせて、働き先 (日中) か家 (夜) を目的地にする
+    // 持ち主 (住民) がいれば、時刻に合わせて、職場・店・家を目的地にする
     if (car.dest < 0 && car.owner >= 0) {
+      car.purpose = purposeAtHour(this.hour);
       const nodes = this.personNodes.get(car.owner);
-      const target = nodes ? (this.hour >= WORK_START && this.hour < WORK_END ? nodes.work : nodes.home) : null;
+      const target = car.purpose === "commute" ? nodes?.work : car.purpose === "return" ? nodes?.home : this.pickShoppingNode(car, from);
       if (target !== null && target !== undefined && target !== from) {
         const route = routeTo(this.city.graph, from, car.seed, target);
         if (route.length > 0) {
@@ -652,10 +666,15 @@ export class Traffic3D {
           return;
         }
       }
+      if (target === from) {
+        car.dwell = car.purpose === "commute" ? Math.max(DWELL_MIN, secondsUntilHour(this.hour, this.hour < 11.5 ? 11.5 : 18)) : car.purpose === "shopping" ? 5 : secondsUntilHour(this.hour, 6);
+        car.speed = 0;
+        return;
+      }
     }
     // 目的地が決まっていなければ、行けるところを選ぶ (行けない場所は、何度か選び直す)
     if (car.dest < 0) {
-      const list = car.goal === "work" ? this.workNodes : this.homeNodes;
+      const list = car.purpose === "shopping" ? this.shoppingNodes : this.workNodes;
       const pool = (list.length > 0 ? list : [...this.city.graph.nodes.keys()]).filter((n) => this.city.isOutsideNode(n));
       for (let k = 0; k < 6 && car.dest < 0 && pool.length > 0; k++) {
         const cand = pool[Math.floor(hash2(car.seed, from + this.carSerial++, pool.length) * pool.length)] ?? -1;
@@ -675,10 +694,18 @@ export class Traffic3D {
     if (car.route.length === 0 && from !== car.dest) car.dest = -1; // 届かない場所は、選び直す
   }
 
+  /** 住民の買い物先を、商業施設の中から毎回同じ規則で選ぶ。 */
+  private pickShoppingNode(car: Car, from: number): number | null {
+    const pool = this.shoppingNodes.filter((n) => n !== from && this.city.isOutsideNode(n));
+    if (pool.length === 0) return null;
+    return pool[Math.floor(hash2(car.seed, from, this.carSerial++) * pool.length)] ?? null;
+  }
+
   /** 住宅の前と、職場の前の交差点を集める。 */
   private rebuildDestinations(): void {
     this.homeNodes = [];
     this.workNodes = [];
+    this.shoppingNodes = [];
     const graph = this.city.graph;
     // 外部接続の入口: 外部接続の近くで、外部接続につながった道路の交差点と、そこから出る道
     this.entries = [];
@@ -721,7 +748,10 @@ export class Traffic3D {
         if (n !== null) this.homeNodes.push(n);
       } else if (c.zone === ZoneType.Commercial || c.zone === ZoneType.Industrial || c.zone === ZoneType.Office) {
         const n = frontNodeOf(graph, c);
-        if (n !== null) this.workNodes.push(n);
+        if (n !== null) {
+          this.workNodes.push(n);
+          if (c.zone === ZoneType.Commercial) this.shoppingNodes.push(n);
+        }
       }
     }
   }
@@ -798,7 +828,7 @@ export class Traffic3D {
         speed: 0,
         heading: Math.atan2((b2.y - a2.y) * e.dir, (b2.x - a2.x) * e.dir),
         dest: -1,
-        goal: hash2(this.spawnSerial, e.edge, 9) < 0.5 ? "work" : "home",
+        purpose: this.ownerPool.length > 0 ? purposeAtHour(this.hour) : "external",
         dwell: 0,
         uturn: -1,
         braking: false,

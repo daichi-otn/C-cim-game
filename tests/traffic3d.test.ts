@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { RoadType } from "../src/sim/roadTypes";
 import { ZoneType } from "../src/sim/zoning";
-import { Traffic3D } from "../src/render3d/traffic3d";
+import { purposeAtHour, Traffic3D } from "../src/render3d/traffic3d";
 import { lanePoint, projectOnSegment } from "../src/render3d/carMotion";
 import type { Roads3D } from "../src/render3d/roads3d";
 import { setup } from "./helpers";
@@ -66,6 +66,17 @@ describe("交差点での車", () => {
     }
     // 車の長さは 0.3 タイル。0.2 タイルより近づかないこと
     expect(worst).toBeGreaterThan(0.2);
+  });
+});
+
+describe("車の目的", () => {
+  it("時刻ごとに通勤・買い物・帰宅へ切り替わる", () => {
+    expect(purposeAtHour(7)).toBe("commute");
+    expect(purposeAtHour(10)).toBe("commute");
+    expect(purposeAtHour(12)).toBe("shopping");
+    expect(purposeAtHour(15)).toBe("commute");
+    expect(purposeAtHour(20)).toBe("return");
+    expect(purposeAtHour(2)).toBe("return");
   });
 });
 
