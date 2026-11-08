@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.94.0";
+const VERSION = "0.95.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -952,6 +952,10 @@ async function main() {
     if (!g || !titleEl.classList.contains("hidden")) return;
     reportMenu("");
     $("menu-map").textContent = `マップ: ${g.mapName} (シード ${g.city.seed})`;
+    const { lastMonth, lastBudget } = g.city;
+    $("menu-budget").textContent = lastBudget
+      ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
+      : "内訳は次の月の決算後に表示されます。";
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
     menuSeen = true;

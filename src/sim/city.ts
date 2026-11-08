@@ -171,6 +171,8 @@ export class City {
   private densityNeed = new Map<ZoneType, number[]>();
   /** 直近 1 か月の収支。まだ月が終わっていなければ 0。 */
   lastMonth: MonthReport = { income: 0, expense: 0 };
+  /** 今回の実行中に締めた月の内訳。古いセーブには内訳がない。 */
+  lastBudget: { roads: number; pensions: number; facilities: number } | null = null;
   /** 地価 (0〜1) の、区画ごとの値 (キーは "x,y")。道路・サービス・環境・施設から毎日求め直す。保存しない。 */
   landValues = new Map<string, number>();
   /** 建物が建っている場所の地価の平均から決まる、税の上乗せの割合 (0〜LAND_TAX_BONUS)。保存しない。 */
@@ -1004,9 +1006,10 @@ export class City {
     for (const g of this.districts) {
       g.wallet += Math.round(monthlyTax(this.zones.totalsWhere((c) => this.districtOf(c) === g), g.taxRate ?? this._taxRate, season) * boost);
     }
-    let expense = Math.round(this.graph.totalUpkeep());
+    const roads = Math.round(this.graph.totalUpkeep());
     // 高齢者の年金は、税金 (市の財布) から出す
-    expense += Math.round(this.seniors * PENSION_PER_SENIOR);
+    const pensions = Math.round(this.seniors * PENSION_PER_SENIOR);
+    let facilities = 0;
     for (const f of this.facilities.values()) {
       // 地区の中の施設の維持費は、その地区の財布から先に払い、足りない分だけ市の出費になる
       let cost = FACILITY_SPECS[f.type].upkeep;
@@ -1016,9 +1019,11 @@ export class City {
         g.wallet -= paid;
         cost -= paid;
       }
-      expense += cost;
+      facilities += cost;
     }
+    const expense = roads + pensions + facilities;
     if (!this.devMode) this.money += income - expense; // 開発者モードでは、収支はお金に影響しない (収支の表示だけ更新する)
     this.lastMonth = { income, expense };
+    this.lastBudget = { roads, pensions, facilities };
   }
 }
