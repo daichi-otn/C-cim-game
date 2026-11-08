@@ -307,6 +307,8 @@ export class Traffic3D {
       if (n >= CAPACITY) break;
       const dt = simDt;
       this.step(car, dt);
+      // 目的地での滞在中は駐車中として道路上に描かず、通行を妨げない。
+      if (car.dwell > 0 || car.gone) continue;
       const e = graph.edges.get(car.edge);
       if (!e) continue;
       const a = graph.nodes.get(e.a)!;
@@ -372,7 +374,11 @@ export class Traffic3D {
       car.dwell = Math.max(0, car.dwell - dt);
       car.speed = stepSpeed(car.speed, -CAR.decel, dt);
       car.braking = car.speed > 0.05;
-      if (car.dwell === 0) this.nextTrip(car);
+      if (car.dwell === 0) {
+        // 発進位置が使われている間は駐車したまま待つ。
+        if (this.entryOccupiedByCar(car)) car.dwell = 0.1;
+        else this.nextTrip(car);
+      }
       return;
     }
     // U ターン中: その場で向きを変えてから、逆向きに走り出す
@@ -486,7 +492,7 @@ export class Traffic3D {
     const me = lanePoint(car.ax, car.ay, h);
     let best: { gap: number; speed: number } | null = null;
     for (const o of this.cars) {
-      if (o === car) continue;
+      if (o === car || o.dwell > 0 || o.gone) continue;
       const q = lanePoint(o.ax, o.ay, this.laneHeading(o));
       let gap = aheadGap(me.x, me.y, h, q.x, q.y, LEADER_LOOK);
       // ちょうど同じ場所に重なった車 (前後が決められない): 番号の小さい方が止まり、大きい方は走って離れる
@@ -522,12 +528,6 @@ export class Traffic3D {
         return;
       }
       if (car.dest === reached) {
-        // 目的地の場所に、ほかの車がいれば、空くまで待つ (重ならないように)
-        if (this.parkBlocked(car)) {
-          car.speed = 0;
-          car.braking = false;
-          return;
-        }
         car.dest = -1;
         // 止まるときは、通り抜けていた交差点も手放す (止まった車が交差点を塞がないように)
         if (car.claimNode >= 0 && this.nodeHolder.get(car.claimNode) === car) this.nodeHolder.delete(car.claimNode);
@@ -563,6 +563,7 @@ export class Traffic3D {
       car.braking = false;
       return;
     }
+    if (car.claimNode >= 0 && this.nodeHolder.get(car.claimNode) === car) this.nodeHolder.delete(car.claimNode);
     this.nodeHolder.set(reached, car);
     car.claimNode = reached;
     const step = car.route.shift()!;
@@ -587,9 +588,14 @@ export class Traffic3D {
     return DWELL_MIN + (DWELL_MAX - DWELL_MIN) * hash2(car.seed, car.edge, this.carSerial++);
   }
 
-  /** 止まる場所 (区間の端) に、同じ車線で車がいるか。 */
-  private parkBlocked(car: Car): boolean {
-    return this.laneBlocked(car, car.dir);
+  /** 駐車場所から道路へ戻る位置に、走行中の車がいるか。 */
+  private entryOccupiedByCar(car: Car): boolean {
+    const me = this.lanePos(car);
+    return this.cars.some((o) => {
+      if (o === car || o.dwell > 0 || o.gone) return false;
+      const q = this.lanePos(o);
+      return Math.hypot(q.x - me.x, q.y - me.y) < CAR_LEN + 0.1;
+    });
   }
 
   /** 今の場所に、指定の向き (dir) の車線で、ほかの車がいるか。 */
@@ -599,7 +605,7 @@ export class Traffic3D {
     const a = this.city.graph.nodes.get(e.a)!;
     const b = this.city.graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
-    return this.cars.some((o) => o !== car && o.edge === car.edge && o.dir === dir && Math.abs(o.p - car.p) * len < CAR_LEN + 0.1);
+    return this.cars.some((o) => o !== car && o.dwell <= 0 && !o.gone && o.edge === car.edge && o.dir === dir && Math.abs(o.p - car.p) * len < CAR_LEN + 0.1);
   }
 
   /** 信号: 赤なら止まる。黄色は、止まれるなら止まる (止まれないときは、そのまま通る)。 */
@@ -627,7 +633,7 @@ export class Traffic3D {
     const n = this.city.graph.nodes.get(step.dir > 0 ? e.a : e.b)!;
     const entry = lanePoint(n.x, n.y, this.headingOf(step));
     return this.cars.some((o) => {
-      if (o === car) return false;
+      if (o === car || o.dwell > 0 || o.gone) return false;
       const q = this.lanePos(o);
       return Math.hypot(q.x - entry.x, q.y - entry.y) < CAR_LEN + 0.1;
     });

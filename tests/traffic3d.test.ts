@@ -22,6 +22,26 @@ function crossingCity() {
 }
 
 describe("交差点での車", () => {
+  it("目的地で滞在中の車は交差点に描画されず、ほかの車の進入を妨げない", () => {
+    const { city, traffic } = crossingCity();
+    for (const e of city.graph.edges.values()) city.traffic.flow.set(e.id, 60);
+    city.trafficVersion++;
+    traffic.update(0, 0);
+    const t = traffic as any;
+    const car = t.cars[0];
+    expect(car).toBeDefined();
+    t.cars = [car];
+    car.dwell = 10;
+    traffic.update(0.1, 0);
+    expect(t.body.count).toBe(0);
+    const follower = { ...car, dwell: 0, seed: car.seed + 1 };
+    t.cars.push(follower);
+    expect(t.entryOccupiedByCar(follower)).toBe(false);
+    expect(t.leaderOf(follower)).toBeNull();
+    car.dwell = 0.01;
+    traffic.update(0.1, 0);
+    expect(car.dwell).toBeGreaterThan(0);
+  });
   it("道路が交差点で分割されても、車は消えず、いまの道路の上に残る", () => {
     const { city, x0, roadY, traffic } = crossingCity();
     city.refresh();
