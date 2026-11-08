@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.93.0";
+const VERSION = "0.94.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -839,6 +839,28 @@ async function main() {
   };
 
   const mapsEl = $("maps");
+  const titleSelection = $("title-selection");
+  const newGameSettings = $("new-game-settings");
+  const selectedMap = $("selected-map");
+  const newGameSound = $<HTMLInputElement>("new-game-sound");
+  const newGameDev = $<HTMLInputElement>("new-game-dev");
+  const newGameMsg = $("new-game-msg");
+  let pendingStart: { seed: number; mapId: string; mapName: string } | null = null;
+  const showNewGameSettings = (next: { seed: number; mapId: string; mapName: string }) => {
+    pendingStart = next;
+    selectedMap.textContent = `選択中のマップ: ${next.mapName}`;
+    newGameSound.checked = soundscape.isEnabled;
+    newGameDev.checked = devMode;
+    newGameMsg.textContent = "";
+    titleSelection.classList.add("hidden");
+    newGameSettings.classList.remove("hidden");
+  };
+  const showMapSelection = () => {
+    pendingStart = null;
+    newGameSettings.classList.add("hidden");
+    titleSelection.classList.remove("hidden");
+  };
+  const selectMap = (next: { seed: number; mapId: string; mapName: string }) => showNewGameSettings(next);
   for (const m of MAPS) {
     const card = document.createElement("button");
     card.className = "map-card";
@@ -849,14 +871,14 @@ async function main() {
     const desc = document.createElement("span");
     desc.textContent = m.description;
     card.append(canvas, name, desc);
-    card.addEventListener("click", () => startGame({ seed: m.seed, mapId: m.id, mapName: m.name }));
+    card.addEventListener("click", () => selectMap({ seed: m.seed, mapId: m.id, mapName: m.name }));
     mapsEl.append(card);
     // 縮小図は重いので、タイトル画面が最初に開いたあとに描く
     window.setTimeout(() => drawMapPreview(canvas, m.seed), 0);
   }
 
   const seedInput = $<HTMLInputElement>("seed-input");
-  const startCustom = (seed: number) => startGame({ seed, mapId: "custom", mapName: mapNameFor(seed) });
+  const startCustom = (seed: number) => selectMap({ seed, mapId: "custom", mapName: mapNameFor(seed) });
   $("seed-start").addEventListener("click", () => {
     const seed = seedFromText(seedInput.value);
     if (seed === null) reportTitle("シード値を入力してください (数字でも言葉でもかまいません)", true);
@@ -866,6 +888,15 @@ async function main() {
     if (e.key === "Enter") $("seed-start").click();
   });
   $("seed-random").addEventListener("click", () => startCustom(randomSeed()));
+  $("new-game-back").addEventListener("click", showMapSelection);
+  $("new-game-start").addEventListener("click", () => {
+    if (!pendingStart) return;
+    soundscape.setEnabled(newGameSound.checked);
+    devMode = newGameDev.checked;
+    $<HTMLInputElement>("menu-dev").checked = devMode;
+    $("menu-alert-test").classList.toggle("hidden", !devMode);
+    startGame(pendingStart);
+  });
 
   // タイトル画面の背景: 開いているあいだだけ動かす (動きを減らす設定のときは、止めた絵)
   // タイトル画面の背景: タワークレーンが街を組み上げる (3D)。開いたときに作り、開いているあいだだけ動かす
@@ -912,6 +943,7 @@ async function main() {
     $("tutorial-note").classList.toggle("hidden", !done);
     $("tutorial-start").classList.toggle("primary", !done);
     $("title-close").classList.toggle("hidden", !g);
+    showMapSelection();
     titleEl.classList.remove("hidden");
   }
   $("title-close").addEventListener("click", () => titleEl.classList.add("hidden"));
@@ -930,8 +962,9 @@ async function main() {
   $("menu-title").addEventListener("click", openTitle);
   /** グラフィック設定の欄を作る: 項目ごとに 5 つの段階のボタン。 */
   const graphicsBox = $("menu-graphics");
-  function renderGraphicsMenu() {
-    graphicsBox.textContent = "";
+  const newGameGraphicsBox = $("new-game-graphics");
+  function renderGraphicsMenu(target: HTMLElement = graphicsBox) {
+    target.textContent = "";
     for (const k of Object.keys(DEFAULT_GRAPHICS) as GraphicsKey[]) {
       const row = document.createElement("div");
       row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:6px 8px;margin:8px 0;color:#d4dae2;font-size:14px";
@@ -954,15 +987,16 @@ async function main() {
             // 保存できなくても、そのときの設定で描画する
           }
           world.applyGraphics(graphics);
-          renderGraphicsMenu();
+          renderGraphicsMenu(target);
         });
         btns.appendChild(b);
       });
       row.append(name, btns);
-      graphicsBox.appendChild(row);
+      target.appendChild(row);
     }
   }
   renderGraphicsMenu();
+  renderGraphicsMenu(newGameGraphicsBox);
   const landBox = $<HTMLInputElement>("menu-land");
   landBox.addEventListener("change", () => {
     world.landHeat = landBox.checked;

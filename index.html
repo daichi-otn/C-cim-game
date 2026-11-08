@@ -151,6 +151,10 @@
       #menu-msg { min-height: 20px; margin-top: 8px; font-size: 13px; color: #7bd88f; }
       #menu-msg.error, #title-msg.error { color: #e05a4f; }
       #title-msg { min-height: 20px; margin-top: 8px; font-size: 13px; color: #7bd88f; }
+      #new-game-msg { min-height: 20px; margin-top: 8px; font-size: 13px; color: #7bd88f; }
+      .selected-map { color: #9ad0ff !important; font-weight: 600; background: #2a3038; border-radius: 6px; padding: 8px 10px; }
+      .setting-row { display: block; margin: 12px 0; color: #d4dae2; }
+      .setting-row input { width: 18px; height: 18px; vertical-align: -4px; margin-right: 6px; }
       #menu-button { position: fixed; bottom: 12px; left: 12px; font: 13px sans-serif; color: #fff; background: rgba(0,0,0,.6);
                      border: 2px solid transparent; border-radius: 8px; padding: 8px 12px; cursor: pointer; }
       #menu-button:hover { background: #3a4048; }
@@ -263,6 +267,7 @@
           <h1>C-cim</h1>
           <p class="tagline">何もない土地から、街をつくる。</p>
         </div>
+        <div id="title-selection">
         <p>マップを選んで、街づくりを始めましょう。</p>
         <div id="tutorial-offer" style="margin:14px 0 4px">
           <button id="tutorial-start" class="btn primary">はじめての方へ: チュートリアルで街づくりを学ぶ</button>
@@ -280,6 +285,21 @@
         <h2>セーブデータから続ける</h2>
         <div id="title-slots"></div>
         <div id="title-msg"></div>
+        </div>
+        <div id="new-game-settings" class="hidden">
+          <h2 style="margin-top:8px">ゲーム設定</h2>
+          <p id="selected-map" class="selected-map"></p>
+          <label class="setting-row"><input type="checkbox" id="new-game-sound"> 音を出す</label>
+          <label class="setting-row"><input type="checkbox" id="new-game-dev"> 開発者モード</label>
+          <h2>グラフィック</h2>
+          <p class="sub" style="margin:-4px 0 6px;font-size:12px;color:#9aa5b1">端末に合わせて、街を始める前に描画の軽さを調整できます。</p>
+          <div id="new-game-graphics"></div>
+          <p id="new-game-msg"></p>
+          <div class="row-end">
+            <button id="new-game-back" class="btn">マップを選び直す</button>
+            <button id="new-game-start" class="btn primary">この設定で始める</button>
+          </div>
+        </div>
         <div class="row-end"><button id="title-close" class="btn hidden">ゲームに戻る</button></div>
       </div>
     </div>
