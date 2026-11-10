@@ -96,6 +96,8 @@ export interface CityData {
   day: number;
   money: number;
   taxRate: number;
+  /** 融資の残高。旧データでは省略される。 */
+  loanBalance?: number;
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -159,6 +161,7 @@ export class City {
   /** 施設が増減したら増える。描画側が再描画の要否を判断するのに使う。 */
   facilitiesVersion = 0;
   money = START_MONEY;
+  loanBalance = 0;
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -172,7 +175,7 @@ export class City {
   /** 直近 1 か月の収支。まだ月が終わっていなければ 0。 */
   lastMonth: MonthReport = { income: 0, expense: 0 };
   /** 今回の実行中に締めた月の内訳。古いセーブには内訳がない。 */
-  lastBudget: { roads: number; pensions: number; facilities: number } | null = null;
+  lastBudget: { roads: number; pensions: number; facilities: number; interest: number } | null = null;
   /** 地価 (0〜1) の、区画ごとの値 (キーは "x,y")。道路・サービス・環境・施設から毎日求め直す。保存しない。 */
   landValues = new Map<string, number>();
   /** 建物が建っている場所の地価の平均から決まる、税の上乗せの割合 (0〜LAND_TAX_BONUS)。保存しない。 */
@@ -251,6 +254,7 @@ export class City {
       day: this.day,
       money: this.money,
       taxRate: this._taxRate,
+      loanBalance: this.loanBalance,
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -267,6 +271,7 @@ export class City {
   static fromData(d: CityData): City {
     const isInt = (v: unknown, min: number, max = Infinity) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!isInt(d.seed, 0) || !isInt(d.day, 0) || !Number.isFinite(d.money) || !Number.isFinite(d.taxRate)) throw new Error("街の基本情報が不正です");
+    if (d.loanBalance !== undefined && !isInt(d.loanBalance, 0, 1000000000)) throw new Error("融資の残高が不正です");
     if (!isInt(d.rngState, 0, 0xffffffff) || !isInt(d.nextFacilityId, 1)) throw new Error("街の内部状態が不正です");
     if (!Array.isArray(d.zones) || !Array.isArray(d.facilities)) throw new Error("ゾーンや施設のデータが不正です");
     const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState);
@@ -287,6 +292,7 @@ export class City {
     const builtDay = d.day;
     city.day = d.day;
     city.money = d.money;
+    city.loanBalance = d.loanBalance ?? 0;
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
     if (d.people !== undefined) {
@@ -388,6 +394,23 @@ export class City {
 
   get taxRate(): number {
     return this._taxRate;
+  }
+
+  /** 1 億円単位で借り入れ、残高は 10 億円まで。 */
+  borrowLoan(): boolean {
+    if (this.loanBalance + 100000000 > 1000000000) return false;
+    this.loanBalance += 100000000;
+    this.money += 100000000;
+    return true;
+  }
+
+  /** 手元資金と残高の範囲で 1 億円まで元金を返す。 */
+  repayLoan(): boolean {
+    const amount = Math.min(100000000, this.loanBalance);
+    if (amount <= 0 || this.money < amount) return false;
+    this.loanBalance -= amount;
+    this.money -= amount;
+    return true;
   }
 
   /** 税率を MIN〜MAX の範囲で、1% 刻みに丸めて設定する。 */
@@ -1021,9 +1044,10 @@ export class City {
       }
       facilities += cost;
     }
-    const expense = roads + pensions + facilities;
+    const interest = Math.round(this.loanBalance * 0.01);
+    const expense = roads + pensions + facilities + interest;
     if (!this.devMode) this.money += income - expense; // 開発者モードでは、収支はお金に影響しない (収支の表示だけ更新する)
     this.lastMonth = { income, expense };
-    this.lastBudget = { roads, pensions, facilities };
+    this.lastBudget = { roads, pensions, facilities, interest };
   }
 }

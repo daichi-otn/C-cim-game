@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.2";
+const VERSION = "0.95.3";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -954,12 +954,22 @@ async function main() {
     $("menu-map").textContent = `マップ: ${g.mapName} (シード ${g.city.seed})`;
     const { lastMonth, lastBudget } = g.city;
     $("menu-budget").textContent = lastBudget
-      ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
+      ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 利息 ${yen(lastBudget.interest)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
       : "内訳は次の月の決算後に表示されます。";
+    updateLoanMenu();
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
     menuSeen = true;
   }
+  function updateLoanMenu() {
+    if (!g) return;
+    const city = g.city;
+    $("menu-loan").textContent = `借入残高 ${yen(city.loanBalance)} 円 / 翌月の利息 ${yen(Math.round(city.loanBalance * 0.01))} 円 / 市の資金 ${yen(city.money)} 円`;
+    ($("loan-borrow") as HTMLButtonElement).disabled = city.loanBalance >= 1000000000;
+    ($("loan-repay") as HTMLButtonElement).disabled = city.loanBalance <= 0 || city.money < Math.min(100000000, city.loanBalance);
+  }
+  $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) updateLoanMenu(); });
+  $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) updateLoanMenu(); });
   const closeMenu = () => menuEl.classList.add("hidden");
   $("menu-button").addEventListener("click", () => (menuEl.classList.contains("hidden") ? openMenu() : closeMenu()));
   $("menu-close").addEventListener("click", closeMenu);
