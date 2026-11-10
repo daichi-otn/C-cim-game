@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.3";
+const VERSION = "0.95.4";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -954,9 +954,10 @@ async function main() {
     $("menu-map").textContent = `マップ: ${g.mapName} (シード ${g.city.seed})`;
     const { lastMonth, lastBudget } = g.city;
     $("menu-budget").textContent = lastBudget
-      ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 利息 ${yen(lastBudget.interest)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
+      ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 利息 ${yen(lastBudget.interest)} 円 / 暮らしの支援 ${yen(lastBudget.welfare)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
       : "内訳は次の月の決算後に表示されます。";
     updateLoanMenu();
+    ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
     menuSeen = true;
@@ -970,6 +971,11 @@ async function main() {
   }
   $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) updateLoanMenu(); });
   $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) updateLoanMenu(); });
+  $("policy-welfare").addEventListener("change", (event) => {
+    if (!g) return;
+    g.city.welfarePolicy = (event.target as HTMLInputElement).checked;
+    g.city.refresh();
+  });
   const closeMenu = () => menuEl.classList.add("hidden");
   $("menu-button").addEventListener("click", () => (menuEl.classList.contains("hidden") ? openMenu() : closeMenu()));
   $("menu-close").addEventListener("click", closeMenu);
