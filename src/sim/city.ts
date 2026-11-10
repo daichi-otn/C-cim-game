@@ -20,7 +20,7 @@ import {
   type PlaceCheck,
   type Service,
 } from "./facilities";
-import { createStatefulRng, type StatefulRng } from "./rng";
+import { createStatefulRng, hash2, type StatefulRng } from "./rng";
 import { RoadGraph, isAccessEdge, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
 import { costMultOf, planPath } from "./structures";
@@ -100,6 +100,9 @@ export interface CityData {
   loanBalance?: number;
   /** 暮らしの支援条例。旧データでは無効。 */
   welfarePolicy?: boolean;
+  /** 災害の設定と進行中の火災。昔のデータでは災害なし。 */
+  disastersEnabled?: boolean;
+  fire?: { x: number; y: number; started: number } | null;
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -165,6 +168,8 @@ export class City {
   money = START_MONEY;
   loanBalance = 0;
   welfarePolicy = false;
+  disastersEnabled = false;
+  fire: { x: number; y: number; started: number } | null = null;
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -259,6 +264,8 @@ export class City {
       taxRate: this._taxRate,
       loanBalance: this.loanBalance,
       welfarePolicy: this.welfarePolicy,
+      disastersEnabled: this.disastersEnabled,
+      fire: this.fire ? { ...this.fire } : null,
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -277,6 +284,8 @@ export class City {
     if (!isInt(d.seed, 0) || !isInt(d.day, 0) || !Number.isFinite(d.money) || !Number.isFinite(d.taxRate)) throw new Error("街の基本情報が不正です");
     if (d.loanBalance !== undefined && !isInt(d.loanBalance, 0, 1000000000)) throw new Error("融資の残高が不正です");
     if (d.welfarePolicy !== undefined && typeof d.welfarePolicy !== "boolean") throw new Error("条例の設定が不正です");
+    if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");
+    if (d.fire != null && (typeof d.fire !== "object" || !isInt(d.fire.x, -1e9, 1e9) || !isInt(d.fire.y, -1e9, 1e9) || !isInt(d.fire.started, 0, d.day) || !d.disastersEnabled)) throw new Error("火災のデータが不正です");
     if (!isInt(d.rngState, 0, 0xffffffff) || !isInt(d.nextFacilityId, 1)) throw new Error("街の内部状態が不正です");
     if (!Array.isArray(d.zones) || !Array.isArray(d.facilities)) throw new Error("ゾーンや施設のデータが不正です");
     const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState);
@@ -299,6 +308,8 @@ export class City {
     city.money = d.money;
     city.loanBalance = d.loanBalance ?? 0;
     city.welfarePolicy = d.welfarePolicy ?? false;
+    city.disastersEnabled = d.disastersEnabled ?? false;
+    city.fire = d.fire ? { ...d.fire } : null;
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
     if (d.people !== undefined) {
@@ -835,6 +846,11 @@ export class City {
   notices(): string[] {
     const out: string[] = [];
     if (this.devMode) return ["開発者モード: 供給・ごみ・公共サービス・外部接続・環境・渋滞・需要・お金の条件を無視しています"];
+    if (this.fire) {
+      const cell = this.zones.get(this.fire.x, this.fire.y);
+      const responding = cell && this.fireStationFor(cell);
+      out.push(`火災が発生しています (${this.fire.x}, ${this.fire.y})。${responding ? "消防署が対応中です" : "道路でつながる近くの消防署が必要です"}`);
+    }
     const hasZones = this.zones.cells.size > 0;
     for (const k of SERVICES) {
       const u = this.utilities[k];
@@ -1009,8 +1025,44 @@ export class City {
     for (const p of this.people) p.ageDays += 1;
     this.syncPeople();
     this.day++;
+    this.updateFire();
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
     if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
+  }
+
+  /** 同じ道路網につながる消防署だけが現場に対応できる。 */
+  private fireStationFor(cell: ZoneCell): boolean {
+    const center = lotCenter(cell);
+    return cell.net > 0 && [...this.facilities.values()].some((f) => {
+      if (f.type !== FacilityKind.Fire || this.facilityNet.get(f.id) !== cell.net) return false;
+      const station = facilityCenter(f);
+      return Math.hypot(center.x - station.x, center.y - station.y) <= FACILITY_SPECS[FacilityKind.Fire].radius;
+    });
+  }
+
+  /** 火災は最長4日。消防が対応すれば2日で鎮火、対応がなければ建物が失われる。 */
+  private updateFire(): void {
+    if (!this.disastersEnabled || this.devMode) return;
+    if (this.fire) {
+      const c = this.zones.get(this.fire.x, this.fire.y);
+      if (!c || c.building === 0 || c.part !== undefined) { this.fire = null; return; }
+      const age = this.day - this.fire.started;
+      if (age >= 2 && this.fireStationFor(c)) { this.fire = null; return; }
+      if (age >= 4) {
+        this.zones.demolishLot(c);
+        c.building = 0; c.residents = 0; c.built = 0; c.aging = 1; c.w = 1; c.h = 1;
+        this.zones.version++;
+        this.syncPeople();
+        this.fire = null;
+      }
+      return;
+    }
+    // 街の成長用の乱数列と分け、セーブの前後で同じ火災が発生する。
+    if (hash2(this.seed ^ 0x4a2f113, this.day, 0) >= 1 / 180) return;
+    const buildings = [...this.zones.cells.values()].filter((c) => c.building > 0 && c.part === undefined);
+    if (buildings.length === 0) return;
+    const c = buildings[Math.floor(hash2(this.seed ^ 0x4a2f113, this.day, 1) * buildings.length)]!;
+    this.fire = { x: c.x, y: c.y, started: this.day };
   }
 
   /** 住んでいる人の一覧を、家ごとの人数 (区画の住民数) と働き先に合わせる。 */

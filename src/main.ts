@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.4";
+const VERSION = "0.95.5";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -470,8 +470,9 @@ async function main() {
   }
 
   /** 街を作り直して、表示を切り替える。saved があればその状態から、なければ新しい街を始める。 */
-  function startGame(o: { seed: number; mapId: string; mapName: string; saved?: { city: City; view: { x: number; y: number; zoom: number; yaw?: number; pitch?: number; center?: boolean }; speed: number }; origin?: boolean; tutorial?: boolean }) {
+  function startGame(o: { seed: number; mapId: string; mapName: string; saved?: { city: City; view: { x: number; y: number; zoom: number; yaw?: number; pitch?: number; center?: boolean }; speed: number }; origin?: boolean; tutorial?: boolean; disasters?: boolean }) {
     const city = o.saved?.city ?? new City(o.seed);
+    if (!o.saved) city.disastersEnabled = o.disasters ?? false;
     city.devMode = devMode; // 開発者モードは街のデータには入らず、画面の設定として、新しい街・読み込んだ街に引き継ぐ
     world.setCity(city);
     world.trafficHeat = showHeat;
@@ -895,7 +896,7 @@ async function main() {
     devMode = newGameDev.checked;
     $<HTMLInputElement>("menu-dev").checked = devMode;
     $("menu-alert-test").classList.toggle("hidden", !devMode);
-    startGame(pendingStart);
+    startGame({ ...pendingStart, disasters: $<HTMLInputElement>("new-game-disasters").checked });
   });
 
   // タイトル画面の背景: 開いているあいだだけ動かす (動きを減らす設定のときは、止めた絵)
@@ -1835,7 +1836,9 @@ async function main() {
       dayTimer += realDt * speed;
       for (let n = 0; dayTimer >= DAY_SEC && n < MAX_DAYS_PER_FRAME; n++) {
         dayTimer -= DAY_SEC;
+        const hadFire = city.fire !== null;
         city.tick();
+        if (!hadFire && city.fire) emergencyAlert("火災が発生", `座標 ${city.fire.x}, ${city.fire.y} の建物で火災が発生しました。消防署の対応を確認してください。`);
         if (city.day - lastAutosaveDay >= AUTOSAVE_DAYS) {
           lastAutosaveDay = city.day;
           autosave();

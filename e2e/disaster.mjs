@@ -1,0 +1,23 @@
+// 開始時の災害設定とセーブへの反映。
+import { GAME_URL, launch, makeChecker } from "./lib.mjs";
+const start = process.argv[2] ?? GAME_URL;
+const { browser, page, errors } = await launch(start);
+const { check, finish } = makeChecker();
+await page.goto(start.split("?")[0]);
+await page.click("#map-plains");
+check("災害は初期状態で無効", !(await page.isChecked("#new-game-disasters")));
+await page.check("#new-game-disasters");
+await page.click("#new-game-start");
+await page.click("#speed button[data-speed='0']");
+await page.click("#menu-button");
+await page.click("#menu-save-1");
+const save = await page.evaluate(() => JSON.parse(localStorage.getItem("ccim.save.1")));
+check("災害ありの設定を保存", save?.city?.disastersEnabled === true);
+await page.click("#menu-title");
+await page.click("#title-load-1");
+await page.click("#menu-button");
+await page.click("#menu-save-1");
+const loaded = await page.evaluate(() => JSON.parse(localStorage.getItem("ccim.save.1")));
+check("読み込み後も災害ありを維持", loaded?.city?.disastersEnabled === true);
+check("ブラウザエラーなし", errors.length === 0, errors.join(" / "));
+await finish(browser);

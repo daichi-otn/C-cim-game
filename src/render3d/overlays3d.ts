@@ -79,6 +79,22 @@ function crossTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function fireTexture(): THREE.CanvasTexture {
+  const hit = textures.get("fire");
+  if (hit) return hit;
+  const c = document.createElement("canvas");
+  c.width = c.height = 64;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#b52c16";
+  ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "700 36px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff"; ctx.fillText("火", 32, 33);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  textures.set("fire", tex);
+  return tex;
+}
+
 /**
  * 画面に重ねる印: 施設の種類のバッジ (構造物の上に浮かぶ)・環境の色分け (O キー)・病人が多い住宅の赤い十字。
  * 施設・建物・日付が変わったときだけ作り直す (カメラに向くスプライト)。
@@ -101,7 +117,7 @@ export class Overlays3D {
 
   update(): void {
     const { city } = this;
-    const key = `${city.facilitiesVersion}:${city.zones.version}:${city.day}:${city.trafficVersion}:${this.showHeat}:${this.showLand}`;
+    const key = `${city.facilitiesVersion}:${city.zones.version}:${city.day}:${city.trafficVersion}:${this.showHeat}:${this.showLand}:${city.fire?.x}:${city.fire?.y}`;
     if (key === this.key) return;
     this.key = key;
     this.clear();
@@ -118,6 +134,13 @@ export class Overlays3D {
     // 環境の色分けと、病人マーク
     const g = new GeoBuilder();
     for (const c of city.zones.cells.values()) {
+      if (city.fire?.x === c.x && city.fire.y === c.y && c.building > 0) {
+        const b = baseRect(c);
+        const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTexture(), depthTest: false, transparent: true }));
+        sp.position.set(b.x + 3, wallHeight(c) + 10, b.y + 3);
+        sp.scale.set(10, 10, 1); sp.renderOrder = 13;
+        this.marks.add(sp);
+      }
       if (this.showLand) {
         // 地価マップ: 区画のすべてを、地価の色で塗る (青 = 安い、赤 = 高い)
         g.rect(c.x * TILE, c.y * TILE, c.w * TILE, c.h * TILE, 0.9 + 0.1, landColor(city.landValues.get(`${c.x},${c.y}`) ?? 0));
