@@ -291,7 +291,7 @@
           <p id="selected-map" class="selected-map"></p>
           <label class="setting-row"><input type="checkbox" id="new-game-sound"> 音を出す</label>
           <label class="setting-row"><input type="checkbox" id="new-game-dev"> 開発者モード</label>
-          <label class="setting-row"><input type="checkbox" id="new-game-disasters"> 災害あり（現在は火災に対応）</label>
+          <label class="setting-row"><input type="checkbox" id="new-game-disasters"> 災害あり（現在は火災・発電施設の故障に対応）</label>
           <h2>グラフィック</h2>
           <p class="sub" style="margin:-4px 0 6px;font-size:12px;color:#9aa5b1">端末に合わせて、街を始める前に描画の軽さを調整できます。</p>
           <div id="new-game-graphics"></div>
@@ -308,6 +308,7 @@
       <div class="sheet small">
         <h2 style="margin-top:0">メニュー</h2>
         <p id="menu-map"></p>
+        <div id="menu-outage" class="hidden"><h2>停電・復旧</h2><p id="menu-outage-detail"></p><button id="repair-outage" class="btn">200万円で今すぐ修理</button></div>
         <h2>先月の予算内訳（市の財布）</h2>
         <p id="menu-budget"></p>
         <h2>融資</h2>

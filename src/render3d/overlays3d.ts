@@ -95,6 +95,18 @@ function fireTexture(): THREE.CanvasTexture {
   return tex;
 }
 
+function outageTexture(): THREE.CanvasTexture {
+  const hit = textures.get("outage");
+  if (hit) return hit;
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#a36900"; ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "700 36px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff"; ctx.fillText("故", 32, 33);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  textures.set("outage", tex); return tex;
+}
+
 /**
  * 画面に重ねる印: 施設の種類のバッジ (構造物の上に浮かぶ)・環境の色分け (O キー)・病人が多い住宅の赤い十字。
  * 施設・建物・日付が変わったときだけ作り直す (カメラに向くスプライト)。
@@ -117,7 +129,7 @@ export class Overlays3D {
 
   update(): void {
     const { city } = this;
-    const key = `${city.facilitiesVersion}:${city.zones.version}:${city.day}:${city.trafficVersion}:${this.showHeat}:${this.showLand}:${city.fire?.x}:${city.fire?.y}`;
+    const key = `${city.facilitiesVersion}:${city.zones.version}:${city.day}:${city.trafficVersion}:${this.showHeat}:${this.showLand}:${city.fire?.x}:${city.fire?.y}:${city.outage?.facilityId}`;
     if (key === this.key) return;
     this.key = key;
     this.clear();
@@ -130,6 +142,11 @@ export class Overlays3D {
       sp.renderOrder = 12;
       void FACILITY_SPECS;
       this.badges.add(sp);
+      if (city.outage?.facilityId === f.id) {
+        const warning = new THREE.Sprite(new THREE.SpriteMaterial({ map: outageTexture(), depthTest: false, transparent: true }));
+        warning.position.set(o.x, Math.max(facilityHeight(f) * 0.7, 6) + 18, o.z);
+        warning.scale.set(10, 10, 1); warning.renderOrder = 13; this.badges.add(warning);
+      }
     }
     // 環境の色分けと、病人マーク
     const g = new GeoBuilder();

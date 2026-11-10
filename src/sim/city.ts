@@ -103,6 +103,7 @@ export interface CityData {
   /** 災害の設定と進行中の火災。昔のデータでは災害なし。 */
   disastersEnabled?: boolean;
   fire?: { x: number; y: number; started: number } | null;
+  outage?: { facilityId: number; started: number } | null;
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -170,6 +171,7 @@ export class City {
   welfarePolicy = false;
   disastersEnabled = false;
   fire: { x: number; y: number; started: number } | null = null;
+  outage: { facilityId: number; started: number } | null = null;
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -266,6 +268,7 @@ export class City {
       welfarePolicy: this.welfarePolicy,
       disastersEnabled: this.disastersEnabled,
       fire: this.fire ? { ...this.fire } : null,
+      outage: this.outage ? { ...this.outage } : null,
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -286,8 +289,13 @@ export class City {
     if (d.welfarePolicy !== undefined && typeof d.welfarePolicy !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");
     if (d.fire != null && (typeof d.fire !== "object" || !isInt(d.fire.x, -1e9, 1e9) || !isInt(d.fire.y, -1e9, 1e9) || !isInt(d.fire.started, 0, d.day) || !d.disastersEnabled)) throw new Error("火災のデータが不正です");
+    if (d.outage != null && (typeof d.outage !== "object" || !isInt(d.outage.facilityId, 1) || !isInt(d.outage.started, 0, d.day) || !d.disastersEnabled)) throw new Error("停電のデータが不正です");
     if (!isInt(d.rngState, 0, 0xffffffff) || !isInt(d.nextFacilityId, 1)) throw new Error("街の内部状態が不正です");
     if (!Array.isArray(d.zones) || !Array.isArray(d.facilities)) throw new Error("ゾーンや施設のデータが不正です");
+    if (d.outage) {
+      const target = d.facilities.find((f) => f.id === d.outage!.facilityId);
+      if (target && (!FACILITY_SPECS[target.type as FacilityType] || FACILITY_SPECS[target.type as FacilityType].service !== "power")) throw new Error("停電の対象が不正です");
+    }
     const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState);
     for (const g of d.districts ?? []) {
       if (!isInt(g.id, 1) || city.districts.some((o) => o.id === g.id) || typeof g.name !== "string" || g.name.length > 20) throw new Error("地区のデータが不正です");
@@ -310,6 +318,7 @@ export class City {
     city.welfarePolicy = d.welfarePolicy ?? false;
     city.disastersEnabled = d.disastersEnabled ?? false;
     city.fire = d.fire ? { ...d.fire } : null;
+    city.outage = d.outage ? { ...d.outage } : null;
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
     if (d.people !== undefined) {
@@ -579,6 +588,7 @@ export class City {
   /** 施設を取り壊す (お金は戻らない)。 */
   removeFacility(id: number): boolean {
     if (!this.facilities.delete(id)) return false;
+    if (this.outage?.facilityId === id) this.outage = null;
     this.facilitiesVersion++;
     return true;
   }
@@ -707,6 +717,7 @@ export class City {
       if (net === 0) continue; // 道路につながっていない施設は供給できない
       const spec = FACILITY_SPECS[f.type];
       if (spec.service === null) continue; // 外部接続は供給しない
+      if (!this.devMode && this.outage?.facilityId === f.id) continue; // 故障した発電施設は復旧まで発電しない
       let s = spare.get(net);
       if (!s) spare.set(net, (s = { power: 0, water: 0, sewage: 0 }));
       const cap = capacityNow(spec, season, weather); // 風力・太陽光は、いまの天気と季節で変わる
@@ -850,6 +861,10 @@ export class City {
       const cell = this.zones.get(this.fire.x, this.fire.y);
       const responding = cell && this.fireStationFor(cell);
       out.push(`火災が発生しています (${this.fire.x}, ${this.fire.y})。${responding ? "消防署が対応中です" : "道路でつながる近くの消防署が必要です"}`);
+    }
+    if (this.outage) {
+      const f = this.facilities.get(this.outage.facilityId);
+      if (f) out.push(`${FACILITY_SPECS[f.type].name}が故障して停電しています (${f.x}, ${f.y})。自動復旧まで残り ${Math.max(0, 7 - (this.day - this.outage.started))} 日`);
     }
     const hasZones = this.zones.cells.size > 0;
     for (const k of SERVICES) {
@@ -1026,8 +1041,36 @@ export class City {
     this.syncPeople();
     this.day++;
     this.updateFire();
+    this.updateOutage();
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
     if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
+  }
+
+  /** 200万円で発電施設をただちに修理する。 */
+  repairOutage(): boolean {
+    if (!this.outage || !this.facilities.has(this.outage.facilityId) || !this.canAfford(2_000_000)) return false;
+    this.spend(2_000_000);
+    this.outage = null;
+    this.refresh();
+    return true;
+  }
+
+  /** 発電施設の故障は7日後に自動復旧。施設を撤去した場合も解除する。 */
+  private updateOutage(): void {
+    if (!this.disastersEnabled || this.devMode) return;
+    if (this.outage) {
+      if (!this.facilities.has(this.outage.facilityId) || this.day - this.outage.started >= 7) {
+        this.outage = null;
+        this.refresh();
+      }
+      return;
+    }
+    if (hash2(this.seed ^ 0x7b47a19, this.day, 0) >= 1 / 360) return;
+    const plants = [...this.facilities.values()].filter((f) => FACILITY_SPECS[f.type].service === "power" && (this.facilityNet.get(f.id) ?? 0) !== 0);
+    if (!plants.length) return;
+    const f = plants[Math.floor(hash2(this.seed ^ 0x7b47a19, this.day, 1) * plants.length)]!;
+    this.outage = { facilityId: f.id, started: this.day };
+    this.refresh();
   }
 
   /** 同じ道路網につながる消防署だけが現場に対応できる。 */

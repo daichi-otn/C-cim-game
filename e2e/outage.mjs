@@ -1,0 +1,30 @@
+// 停電中のセーブを読み込み、画面から修理する。
+import { buildBase, launch, makeChecker } from "./lib.mjs";
+const { browser, page, errors } = await launch(process.argv[2]);
+const { check, finish } = makeChecker();
+await page.click("#speed button[data-speed='0']");
+await buildBase(page);
+await page.click("#menu-button");
+await page.click("#menu-save-1");
+const ok = await page.evaluate(() => {
+  const data = JSON.parse(localStorage.getItem("ccim.save.1"));
+  const plant = data.city.facilities.find((f) => f.type === 1);
+  if (!plant) return false;
+  data.city.disastersEnabled = true;
+  data.city.outage = { facilityId: plant.id, started: data.city.day };
+  localStorage.setItem("ccim.save.1", JSON.stringify(data));
+  return true;
+});
+check("発電施設を作り停電状態を用意", ok);
+await page.click("#menu-title");
+await page.click("#title-load-1");
+await page.click("#menu-button");
+check("停電の修理欄が表示される", await page.locator("#menu-outage").isVisible());
+check("故障と残り日数が表示される", (await page.textContent("#menu-outage-detail")).includes("7 日"));
+await page.click("#repair-outage");
+check("修理後は修理欄が消える", !(await page.locator("#menu-outage").isVisible()));
+await page.click("#menu-save-1");
+const data = await page.evaluate(() => JSON.parse(localStorage.getItem("ccim.save.1")));
+check("修理後のセーブに停電が残らない", data.city.outage === null);
+check("ブラウザエラーなし", errors.length === 0, errors.join(" / "));
+await finish(browser);

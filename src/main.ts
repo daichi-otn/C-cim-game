@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.5";
+const VERSION = "0.95.6";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -958,6 +958,7 @@ async function main() {
       ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 利息 ${yen(lastBudget.interest)} 円 / 暮らしの支援 ${yen(lastBudget.welfare)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
       : "内訳は次の月の決算後に表示されます。";
     updateLoanMenu();
+    updateOutageMenu();
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
@@ -970,6 +971,16 @@ async function main() {
     ($("loan-borrow") as HTMLButtonElement).disabled = city.loanBalance >= 1000000000;
     ($("loan-repay") as HTMLButtonElement).disabled = city.loanBalance <= 0 || city.money < Math.min(100000000, city.loanBalance);
   }
+  function updateOutageMenu() {
+    if (!g) return;
+    const city = g.city;
+    const f = city.outage ? city.facilities.get(city.outage.facilityId) : undefined;
+    $("menu-outage").classList.toggle("hidden", !f);
+    if (!f || !city.outage) return;
+    $("menu-outage-detail").textContent = `${FACILITY_SPECS[f.type].name} (${f.x}, ${f.y}) が故障中。自動復旧まで ${Math.max(0, 7 - (city.day - city.outage.started))} 日。`;
+    ($("repair-outage") as HTMLButtonElement).disabled = !city.canAfford(2_000_000);
+  }
+  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) updateOutageMenu(); });
   $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) updateLoanMenu(); });
   $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) updateLoanMenu(); });
   $("policy-welfare").addEventListener("change", (event) => {
@@ -1837,8 +1848,10 @@ async function main() {
       for (let n = 0; dayTimer >= DAY_SEC && n < MAX_DAYS_PER_FRAME; n++) {
         dayTimer -= DAY_SEC;
         const hadFire = city.fire !== null;
+        const hadOutage = city.outage !== null;
         city.tick();
         if (!hadFire && city.fire) emergencyAlert("火災が発生", `座標 ${city.fire.x}, ${city.fire.y} の建物で火災が発生しました。消防署の対応を確認してください。`);
+        if (!hadOutage && city.outage) emergencyAlert("発電施設が故障", "発電が停止しています。メニューから修理するか、自動復旧をお待ちください。");
         if (city.day - lastAutosaveDay >= AUTOSAVE_DAYS) {
           lastAutosaveDay = city.day;
           autosave();
