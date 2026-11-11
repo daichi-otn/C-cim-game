@@ -182,6 +182,24 @@ export const TUTORIAL_STEPS: readonly TutorialStep[] = [
     check: (c) => c.menuSeen,
   },
   {
+    id: "expand",
+    title: "街を広げる",
+    body: [
+      "メニューの「土地・資源」では、周辺の土地を買えます。所有地では整地・水路・植林ができ、農地・森林・鉱石・石油の資源を活用できます。",
+      "一次産業を建てると生産が始まります。外部接続につながる道路があると、資源の搬出と加工も進みます。",
+    ],
+    highlight: ["#land-buy", "#terrain-level", "#industry-farm"],
+  },
+  {
+    id: "transport-disaster",
+    title: "交通と災害に備える",
+    body: [
+      "バス・地下鉄・鉄道の路線を作ると、住民の移動を助け、駐車需要を減らせます。統計画面では交差点の種類と信号数も確認できます。",
+      "新しい街を始めるときは災害の有無を選べます。災害対策条例を有効にすると、毎月の費用で被害を減らし、復旧を早められます。",
+    ],
+    highlight: ["#transit-add-bus", "#policy-disaster"],
+  },
+  {
     id: "done",
     title: "チュートリアル完了!",
     body: [

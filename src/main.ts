@@ -39,7 +39,7 @@ import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, dens
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 
-const VERSION = "0.95.29";
+const VERSION = "0.95.30";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
