@@ -504,11 +504,13 @@ export class City {
     const first = this.graph.nodes.get(edges[0]!.a)!;
     const last = this.graph.nodes.get(edges[edges.length - 1]!.b)!;
     const stops = [first, last];
+    const label = mode === "bus" ? "バス" : mode === "subway" ? "地下鉄" : "鉄道";
     const stopIds = stops.map((p) => {
-      const stop = { id: this.nextTransitStopId++, x: p.x, y: p.y, name: `バス停${this.nextTransitStopId - 1}` };
+      const existing = this.transitStops.find((stop) => stop.x === p.x && stop.y === p.y);
+      if (existing) return existing.id;
+      const stop = { id: this.nextTransitStopId++, x: p.x, y: p.y, name: `${label}駅${this.nextTransitStopId - 1}` };
       this.transitStops.push(stop); return stop.id;
     });
-    const label = mode === "bus" ? "バス" : mode === "subway" ? "地下鉄" : "鉄道";
     this.transitLines.push({ id: this.nextTransitLineId, name: `${label} ${this.nextTransitLineId} 系統`, mode, stopIds, vehicles: Math.max(1, Math.min(8, Math.ceil(edges.length / 8))), ridership: 0 });
     this.nextTransitLineId++;
     this.transitVersion++;
@@ -535,8 +537,11 @@ export class City {
     for (const line of this.transitLines) line.ridership = transitRidership(population, stops, this.transitLines.length) * Math.max(1, Math.round(line.stopIds.length / 2));
   }
 
-  transitStats(): { lines: number; stops: number; vehicles: number; ridership: number } {
-    return { lines: this.transitLines.length, stops: this.transitStops.length, vehicles: this.transitLines.reduce((sum, line) => sum + line.vehicles, 0), ridership: this.transitLines.reduce((sum, line) => sum + line.ridership, 0) };
+  transitStats(): { lines: number; stops: number; vehicles: number; ridership: number; transfers: number } {
+    const uses = new Map<number, number>();
+    for (const line of this.transitLines) for (const id of line.stopIds) uses.set(id, (uses.get(id) ?? 0) + 1);
+    const transfers = [...uses.values()].filter((count) => count > 1).length;
+    return { lines: this.transitLines.length, stops: this.transitStops.length, vehicles: this.transitLines.reduce((sum, line) => sum + line.vehicles, 0), ridership: this.transitLines.reduce((sum, line) => sum + line.ridership, 0), transfers };
   }
 
   addParkingLot(): boolean {
