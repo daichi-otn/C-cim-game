@@ -162,6 +162,9 @@
       #menu-button:hover { background: #3a4048; }
       #toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%); z-index: 20; background: rgba(0,0,0,.8);
                color: #fff; padding: 8px 16px; border-radius: 8px; font: 14px sans-serif; pointer-events: none; }
+      #japan-overview { align-items: center; background: rgba(8,14,22,.94); }
+      #japan-overview .sheet { max-width: 820px; text-align: center; }
+      #japan-overview canvas { display: block; width: min(100%, 760px); height: auto; margin: 12px auto; border-radius: 10px; image-rendering: auto; cursor: crosshair; }
       #toast.error { background: rgba(150,40,35,.92); }
       #toolbar kbd { opacity: .6; font-size: 11px; margin-left: 4px; }
     </style>
@@ -294,7 +297,7 @@
           <label class="setting-row"><input type="checkbox" id="new-game-sound"> 音を出す</label>
           <label class="setting-row"><input type="checkbox" id="new-game-dev"> 開発者モード</label>
           <label class="setting-row"><input type="checkbox" id="new-game-disasters"> 災害あり（火災・発電施設の故障・洪水・地震）</label>
-          <label class="setting-row">マップの大きさ <select id="new-game-map-size"><option value="small">小（約128×128タイル）</option><option value="medium" selected>中（約256×256タイル）</option><option value="large">大（約512×512タイル）</option></select></label>
+          <label class="setting-row">マップの大きさ <select id="new-game-map-size"><option value="small">小（約128×128タイル）</option><option value="medium" selected>中（約256×256タイル）</option><option value="large">大（約512×512タイル）</option><option value="country">国土（日本全体・約4096×4096タイル）</option></select></label>
           <h2>グラフィック</h2>
           <p class="sub" style="margin:-4px 0 6px;font-size:12px;color:#9aa5b1">端末に合わせて、街を始める前に描画の軽さを調整できます。</p>
           <div id="new-game-graphics"></div>
@@ -335,6 +338,7 @@
         <p id="menu-terrain" class="sub">整地・水路・植林は画面中央のタイルに適用します。</p>
         <div class="row-end" style="justify-content:flex-start"><button id="terrain-level" class="btn">整地（100万円）</button><button id="terrain-water" class="btn">水路（100万円）</button><button id="terrain-forest" class="btn">植林（30万円）</button></div>
         <p id="menu-industry" class="sub"></p>
+        <button id="menu-japan-overview" class="btn hidden">日本全体の地形を見る</button>
         <div class="row-end" style="justify-content:flex-start"><button id="industry-farm" class="btn">農場</button><button id="industry-forestry" class="btn">林業</button><button id="industry-mine" class="btn">鉱山</button><button id="industry-oil" class="btn">油田</button></div>
         <h2 data-i18n="transit">公共交通</h2>
         <p id="menu-transit"></p>
@@ -361,6 +365,14 @@
           <button id="menu-title" class="btn" data-i18n="titleBack">タイトルへ (マップ選択)</button>
           <button id="menu-close" class="btn primary" data-i18n="close">閉じる</button>
         </div>
+      </div>
+    </div>
+    <div id="japan-overview" class="overlay hidden">
+      <div class="sheet">
+        <h2 style="color:#fff;margin-top:0">日本全体の地形</h2>
+        <p>日本列島を低解像度で表示しています。地図をクリックすると、その地域の地形へ移動します。</p>
+        <canvas id="japan-overview-canvas" width="640" height="640" aria-label="日本列島全体の地形図"></canvas>
+        <div class="row-end"><button id="japan-overview-close" class="btn primary">街へ戻る</button></div>
       </div>
     </div>
     <div id="help" class="overlay hidden">

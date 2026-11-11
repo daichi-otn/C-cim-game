@@ -20,6 +20,11 @@ export function japanPreviewBounds(): { x: number; y: number; span: number } {
   return { x: (134.75 - origin.lon) * tpd * Math.cos(origin.lat * Math.PI / 180), y: (origin.lat - 35) * tpd, span: 24 * tpd };
 }
 
+/** 日本列島全体の低解像度地形を描く。ゲーム中の全体図にも使う。 */
+export function drawJapanOverview(canvas: HTMLCanvasElement, size = 640): void {
+  drawMapPreview(canvas, REGION_SEEDS.japan, size);
+}
+
 /**
  * マップの縮小図を canvas に描く。開始地点を中心に SPAN タイル四方を写し、開始地点の区画を白い枠で示す。
  */

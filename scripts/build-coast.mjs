@@ -14,7 +14,8 @@ const DEFAULT_CELL = 0.1; // 古い地域データの既定値 (度)
 // tpd は、緯度 1 度あたりのタイル数 (1 タイル = 1/tpd 度)。細長い国は、街が入るように細かくする。
 const REGIONS = [
   // 日本: 1 タイル = 8 m (ゲームの縮尺)。原点は東京 (街づくりは、ここから始まる)
-  { key: "japan", admin: "Japan", box: [122, 20, 150, 50], tpd: 13915, cell: 0.05, origin: [139.7, 35.7] },
+  // 日本全体を1マップに収めるため、1タイルを約1.1kmにする。
+  { key: "japan", admin: "Japan", box: [122, 20, 150, 50], tpd: 100, cell: 0.05, origin: [139.7, 35.7] },
   // 1 タイルが約 4.6 km。0.05 度 (約 5 km) なら、海岸線の段差が目立ちにくい。
   { key: "uk", admin: "United Kingdom", box: [-9, 49, 2.5, 61], tpd: 24, cell: 0.05 },
   { key: "australia", admin: "Australia", box: [112, -45, 155, -10], tpd: 24, cell: 0.05 },

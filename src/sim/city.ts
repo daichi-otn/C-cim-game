@@ -364,7 +364,7 @@ export class City {
     const isInt = (v: unknown, min: number, max = Infinity) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!isInt(d.seed, 0) || !isInt(d.day, 0) || !Number.isFinite(d.money) || !Number.isFinite(d.taxRate)) throw new Error("街の基本情報が不正です");
     if (d.loanBalance !== undefined && !isInt(d.loanBalance, 0, 1000000000)) throw new Error("融資の残高が不正です");
-    if (d.mapSize !== undefined && !["small", "medium", "large"].includes(d.mapSize)) throw new Error("マップサイズが不正です");
+    if (d.mapSize !== undefined && !["small", "medium", "large", "country"].includes(d.mapSize)) throw new Error("マップサイズが不正です");
     if (d.welfarePolicy !== undefined && typeof d.welfarePolicy !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disasterPreparedness !== undefined && typeof d.disasterPreparedness !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");

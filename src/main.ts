@@ -4,7 +4,7 @@ import { DEFAULT_PITCH, MAX_PITCH, MAX_ZOOM, MIN_ZOOM } from "./render3d/camera3
 import { KeyCamera } from "./render3d/keyCamera";
 import { SEASON_NAMES, WEATHER_NAMES } from "./sim/weather";
 import { DAY_MODE_NAMES, DayClock, START_HOUR, formatHour } from "./render/lighting";
-import { drawMapPreview } from "./render/mapPreview";
+import { drawJapanOverview, drawMapPreview, japanPreviewBounds } from "./render/mapPreview";
 import { createTitleCrane, type TitleCrane } from "./render3d/titleCrane";
 import { City, type RoadQuote } from "./sim/city";
 import { LANE } from "./sim/roadTypes";
@@ -17,6 +17,7 @@ import { planLoop, type LoopPlan } from "./sim/loopPlan";
 import { GARBAGE_GRACE } from "./sim/environment";
 import { COVERAGES, COVERAGE_NAMES, FACILITY_SPECS, FacilityType, SERVICES, type Service } from "./sim/facilities";
 import { MAPS, findStart, mapNameFor, randomSeed, seedFromText } from "./sim/maps";
+import { REGION_SEEDS } from "./sim/terrain";
 import { curvePoints, snapPoint } from "./sim/roadPlacement";
 import { STRUCTURE_SPECS, Structure, isLandPoint } from "./sim/structures";
 import { ZONE_COLORS } from "./render3d/colors";
@@ -41,7 +42,7 @@ import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, loadLocale, text, LOCALE_STORAGE_KEY, type Locale } from "./i18n";
 
-const VERSION = "0.95.35";
+const VERSION = "0.95.36";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -858,7 +859,7 @@ async function main() {
     selectedMap.textContent = `選択中のマップ: ${next.mapName}`;
     newGameSound.checked = soundscape.isEnabled;
     newGameDev.checked = devMode;
-    $<HTMLSelectElement>("new-game-map-size").value = "medium";
+    $<HTMLSelectElement>("new-game-map-size").value = next.seed === REGION_SEEDS.japan ? "country" : "medium";
     newGameMsg.textContent = "";
     titleSelection.classList.add("hidden");
     newGameSettings.classList.remove("hidden");
@@ -960,6 +961,7 @@ async function main() {
     if (!g || !titleEl.classList.contains("hidden")) return;
     reportMenu("");
     $("menu-map").textContent = `マップ: ${g.mapName} (シード ${g.city.seed})`;
+    $("menu-japan-overview").classList.toggle("hidden", g.city.seed !== REGION_SEEDS.japan);
     const { lastMonth, lastBudget } = g.city;
     $("menu-budget").textContent = lastBudget
       ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 利息 ${yen(lastBudget.interest)} 円 / 暮らしの支援 ${yen(lastBudget.welfare)} 円 / 災害対策 ${yen(lastBudget.disasterPreparedness)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
@@ -982,6 +984,30 @@ async function main() {
     menuEl.classList.remove("hidden");
     menuSeen = true;
   }
+
+  const japanOverview = $("japan-overview");
+  const japanOverviewCanvas = $<HTMLCanvasElement>("japan-overview-canvas");
+  const closeJapanOverview = () => japanOverview.classList.add("hidden");
+  $("menu-japan-overview").addEventListener("click", () => {
+    if (!g || g.city.seed !== REGION_SEEDS.japan) return;
+    drawJapanOverview(japanOverviewCanvas, Math.min(760, Math.max(320, Math.floor(Math.min(window.innerWidth - 48, window.innerHeight - 180)))));
+    menuEl.classList.add("hidden");
+    japanOverview.classList.remove("hidden");
+  });
+  $("japan-overview-close").addEventListener("click", closeJapanOverview);
+  japanOverviewCanvas.addEventListener("click", (event) => {
+    if (!g || g.city.seed !== REGION_SEEDS.japan) return;
+    const rect = japanOverviewCanvas.getBoundingClientRect();
+    const size = japanOverviewCanvas.width;
+    const bounds = japanPreviewBounds();
+    const tilesPerPx = bounds.span / size;
+    const tx = bounds.x + ((event.clientX - rect.left) / rect.width * size - size / 2) * tilesPerPx;
+    const ty = bounds.y + ((event.clientY - rect.top) / rect.height * size - size / 2) * tilesPerPx;
+    camera.x = tx * TILE_PX;
+    camera.y = ty * TILE_PX;
+    closeJapanOverview();
+    showToast("選択した地域を表示しました。街づくりは開始地点周辺で行えます");
+  });
   function updateProgressMenu() {
     if (!g) return;
     const s = statisticsOf(g.city);
