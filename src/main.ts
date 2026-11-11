@@ -38,9 +38,10 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
+import type { MapSize } from "./sim/mapSize";
 import { applyLocale, loadLocale, text, LOCALE_STORAGE_KEY, type Locale } from "./i18n";
 
-const VERSION = "0.95.33";
+const VERSION = "0.95.34";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -475,8 +476,8 @@ async function main() {
   }
 
   /** 街を作り直して、表示を切り替える。saved があればその状態から、なければ新しい街を始める。 */
-  function startGame(o: { seed: number; mapId: string; mapName: string; saved?: { city: City; view: { x: number; y: number; zoom: number; yaw?: number; pitch?: number; center?: boolean }; speed: number }; origin?: boolean; tutorial?: boolean; disasters?: boolean }) {
-    const city = o.saved?.city ?? new City(o.seed);
+  function startGame(o: { seed: number; mapId: string; mapName: string; mapSize?: MapSize; saved?: { city: City; view: { x: number; y: number; zoom: number; yaw?: number; pitch?: number; center?: boolean }; speed: number }; origin?: boolean; tutorial?: boolean; disasters?: boolean }) {
+    const city = o.saved?.city ?? new City(o.seed, undefined, undefined, o.mapSize);
     if (!o.saved) city.disastersEnabled = o.disasters ?? false;
     city.devMode = devMode; // 開発者モードは街のデータには入らず、画面の設定として、新しい街・読み込んだ街に引き継ぐ
     world.setCity(city);
@@ -857,6 +858,7 @@ async function main() {
     selectedMap.textContent = `選択中のマップ: ${next.mapName}`;
     newGameSound.checked = soundscape.isEnabled;
     newGameDev.checked = devMode;
+    $<HTMLSelectElement>("new-game-map-size").value = "medium";
     newGameMsg.textContent = "";
     titleSelection.classList.add("hidden");
     newGameSettings.classList.remove("hidden");
@@ -901,7 +903,7 @@ async function main() {
     devMode = newGameDev.checked;
     $<HTMLInputElement>("menu-dev").checked = devMode;
     $("menu-alert-test").classList.toggle("hidden", !devMode);
-    startGame({ ...pendingStart, disasters: $<HTMLInputElement>("new-game-disasters").checked });
+    startGame({ ...pendingStart, mapSize: $<HTMLSelectElement>("new-game-map-size").value as MapSize, disasters: $<HTMLInputElement>("new-game-disasters").checked });
   });
 
   // タイトル画面の背景: 開いているあいだだけ動かす (動きを減らす設定のときは、止めた絵)

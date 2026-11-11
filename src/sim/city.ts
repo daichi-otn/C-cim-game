@@ -48,6 +48,7 @@ import { transitRidership, validateTransitData, type TransitData, type TransitLi
 import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
 import { PRIMARY_NAMES, PRIMARY_RESOURCE, industryFlow, primaryOutput, type PrimaryIndustry, type PrimaryIndustryType } from "./primaryIndustry";
 import { PARKING_CAPACITY, PARKING_COST, parkingUsed, type ParkingLot } from "./parking";
+import { isInMap, type MapSize } from "./mapSize";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
 const MAX_LOT_SIDE = 6;
@@ -150,6 +151,8 @@ export interface CityData {
   transit?: TransitData;
   /** 購入済み土地の左上 [x,y]。旧データでは中心区画だけを所有する。 */
   ownedLand?: [number, number][];
+  /** マップの拡張サイズ。旧データでは中サイズ。 */
+  mapSize?: MapSize;
   industries?: PrimaryIndustry[];
   history?: HistoryPoint[];
   parkingLots?: ParkingLot[];
@@ -306,7 +309,7 @@ export class City {
   /** 環境の汚染源配置が変わらない日は、距離計算を繰り返さない。 */
   private environmentKey = "";
 
-  constructor(readonly seed: number, graph = new RoadGraph(), rngState?: number) {
+  constructor(readonly seed: number, graph = new RoadGraph(), rngState?: number, readonly mapSize: MapSize = "medium") {
     this.graph = graph;
     this.graph.onEdgeSplit = (oldId, newIds) => {
       const until = this.roadDamage.get(oldId);
@@ -352,6 +355,7 @@ export class City {
       history: this.history.map((point) => ({ ...point })),
       parkingLots: this.parkingLots.map((lot) => ({ ...lot })),
       terrainEdits: this.terrainEdits.map((edit) => ({ ...edit })),
+      mapSize: this.mapSize,
     };
   }
 
@@ -360,6 +364,7 @@ export class City {
     const isInt = (v: unknown, min: number, max = Infinity) => Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
     if (!isInt(d.seed, 0) || !isInt(d.day, 0) || !Number.isFinite(d.money) || !Number.isFinite(d.taxRate)) throw new Error("街の基本情報が不正です");
     if (d.loanBalance !== undefined && !isInt(d.loanBalance, 0, 1000000000)) throw new Error("融資の残高が不正です");
+    if (d.mapSize !== undefined && !["small", "medium", "large"].includes(d.mapSize)) throw new Error("マップサイズが不正です");
     if (d.welfarePolicy !== undefined && typeof d.welfarePolicy !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disasterPreparedness !== undefined && typeof d.disasterPreparedness !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");
@@ -374,7 +379,7 @@ export class City {
       const target = d.facilities.find((f) => f.id === d.outage!.facilityId);
       if (target && (!FACILITY_SPECS[target.type as FacilityType] || FACILITY_SPECS[target.type as FacilityType].service !== "power")) throw new Error("停電の対象が不正です");
     }
-    const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState);
+    const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState, d.mapSize ?? "medium");
     if (d.roadDamage !== undefined && (!Array.isArray(d.roadDamage) || (d.roadDamage.length > 0 && !d.disastersEnabled))) throw new Error("道路の被害データが不正です");
     for (const item of d.roadDamage ?? []) {
       if (!Array.isArray(item) || item.length !== 2 || !isInt(item[0], 1) || !isInt(item[1], 0, 1e12) || city.roadDamage.has(item[0]) || !city.graph.edges.has(item[0])) throw new Error("道路の被害データが不正です");
@@ -494,7 +499,7 @@ export class City {
     const px = Math.floor(x / PARCEL_SIZE) * PARCEL_SIZE;
     const py = Math.floor(y / PARCEL_SIZE) * PARCEL_SIZE;
     const key = `${px},${py}`;
-    if (this.ownedLand.has(key) || !this.canAfford(PARCEL_COST)) return false;
+    if (!isInMap(this.mapSize, px + PARCEL_SIZE / 2, py + PARCEL_SIZE / 2) || this.ownedLand.has(key) || !this.canAfford(PARCEL_COST)) return false;
     this.spend(PARCEL_COST); this.ownedLand.add(key); return true;
   }
 
@@ -503,7 +508,7 @@ export class City {
   editTerrain(x: number, y: number, kind: TerrainEditKind): boolean {
     const tx = Math.floor(x); const ty = Math.floor(y);
     const px = Math.floor(tx / PARCEL_SIZE) * PARCEL_SIZE; const py = Math.floor(ty / PARCEL_SIZE) * PARCEL_SIZE;
-    if (!this.ownedLand.has(`${px},${py}`) || !this.canAfford(kind === "forest" ? 300_000 : 1_000_000)) return false;
+    if (!isInMap(this.mapSize, tx, ty) || !this.ownedLand.has(`${px},${py}`) || !this.canAfford(kind === "forest" ? 300_000 : 1_000_000)) return false;
     const existing = this.terrainEdits.find((edit) => edit.x === tx && edit.y === ty);
     if (existing) existing.kind = kind;
     else this.terrainEdits.push({ x: tx, y: ty, kind });
