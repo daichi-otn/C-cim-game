@@ -45,6 +45,7 @@ import { DISTRICT_COLORS, DISTRICT_MAX_COUNT, DISTRICT_MAX_SIZE, DISTRICT_MIN_SI
 import { ageMixAt, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PENALTY, type HomeSlot, type Person } from "./people";
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
 import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitStop } from "./transit";
+import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
 const MAX_LOT_SIDE = 6;
@@ -132,6 +133,8 @@ export interface CityData {
   districts?: { id: number; name: string; color: number; x0: number; y0: number; x1: number; y1: number; taxRate?: number; allowed: boolean[]; wallet: number; greenery?: number }[];
   /** 公共交通。旧データでは省略される。 */
   transit?: TransitData;
+  /** 購入済み土地の左上 [x,y]。旧データでは中心区画だけを所有する。 */
+  ownedLand?: [number, number][];
 }
 
 export interface GameDate {
@@ -253,6 +256,7 @@ export class City {
   transitVersion = 0;
   private nextTransitStopId = 1;
   private nextTransitLineId = 1;
+  readonly ownedLand = new Set<string>(["0,0"]);
   private nextDistrictId = 1;
   /** 地区が変わるたびに増える (描画が作り直すかの判断用)。 */
   districtsVersion = 0;
@@ -312,6 +316,7 @@ export class City {
       nextPersonId: this.nextPersonId,
       districts: this.districts.map((g) => ({ id: g.id, name: g.name, color: g.color, x0: g.x0, y0: g.y0, x1: g.x1, y1: g.y1, taxRate: g.taxRate, allowed: [...g.allowed] as Allowed, wallet: g.wallet, greenery: g.greenery })),
       transit: { nextStopId: this.nextTransitStopId, nextLineId: this.nextTransitLineId, stops: this.transitStops.map((s) => ({ ...s })), lines: this.transitLines.map((l) => ({ ...l, stopIds: [...l.stopIds] })) },
+      ownedLand: [...this.ownedLand].map((key) => key.split(",").map(Number) as [number, number]),
     };
   }
 
@@ -362,6 +367,12 @@ export class City {
       city.transitLines.push(...d.transit.lines.map((l) => ({ ...l, stopIds: [...l.stopIds] })));
       city.nextTransitStopId = Math.max(d.transit.nextStopId, ...city.transitStops.map((s) => s.id + 1));
       city.nextTransitLineId = Math.max(d.transit.nextLineId, ...city.transitLines.map((l) => l.id + 1));
+    }
+    if (d.ownedLand !== undefined) {
+      if (!Array.isArray(d.ownedLand) || d.ownedLand.some(([x, y]) => !isInt(x, -1e9, 1e9) || !isInt(y, -1e9, 1e9))) throw new Error("所有地のデータが不正です");
+      city.ownedLand.clear();
+      for (const [x, y] of d.ownedLand) city.ownedLand.add(`${x},${y}`);
+      if (city.ownedLand.size === 0) city.ownedLand.add("0,0");
     }
     // 建った日を持たない昔のデータの建物は、読み込んだ日に建ったものとする (いきなり建て替えの候補にしない)
     const builtDay = d.day;
@@ -419,6 +430,17 @@ export class City {
     city.facilitiesVersion++;
     return city;
   }
+
+  /** 周囲の16×16タイル区画を1つ購入する。建物の既存動作は所有地制限を受けない。 */
+  purchaseLand(x: number, y: number): boolean {
+    const px = Math.floor(x / PARCEL_SIZE) * PARCEL_SIZE;
+    const py = Math.floor(y / PARCEL_SIZE) * PARCEL_SIZE;
+    const key = `${px},${py}`;
+    if (this.ownedLand.has(key) || !this.canAfford(PARCEL_COST)) return false;
+    this.spend(PARCEL_COST); this.ownedLand.add(key); return true;
+  }
+
+  resourceStats(): Record<ResourceType, number> { return resourceSummary(this.seed, this.ownedLand); }
 
   /** 道路の両端から簡単なバス路線を作る。停留所は道路上に置き、旧セーブにも保存できる。 */
   addBusLine(): boolean {

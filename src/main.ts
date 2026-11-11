@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.16";
+const VERSION = "0.95.17";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -964,6 +964,7 @@ async function main() {
     updateRoadDamageMenu();
     updateProgressMenu();
     updateTransitMenu();
+    updateResourceMenu();
     const volume = $<HTMLInputElement>("menu-volume");
     volume.value = String(soundscape.volumeLevel);
     $("menu-volume-value").textContent = `${Math.round(soundscape.volumeLevel * 100)}%`;
@@ -1003,6 +1004,12 @@ async function main() {
       // 次の行は直前の行の後ろへ並べる
       anchor = row;
     }
+  }
+  function updateResourceMenu() {
+    if (!g) return;
+    const r = g.city.resourceStats();
+    $("menu-resources").textContent = `所有区画 ${g.city.ownedLand.size} / 農地 ${r.farmland}・森林 ${r.forest}・鉱石 ${r.ore}・石油 ${r.oil}`;
+    ($("land-buy") as HTMLButtonElement).disabled = !g.city.canAfford(10_000_000);
   }
   function updateLoanMenu() {
     if (!g) return;
@@ -1075,6 +1082,12 @@ async function main() {
     if (!g) return;
     if (g.city.addBusLine()) { updateTransitMenu(); reportMenu("バス路線を追加しました"); }
     else reportMenu("先に道路を1本以上建設してください", true);
+  });
+  $("land-buy").addEventListener("click", () => {
+    if (!g) return;
+    const next = g.city.ownedLand.size * 16;
+    if (g.city.purchaseLand(next, 0)) { updateResourceMenu(); reportMenu("土地を購入しました"); }
+    else reportMenu("この区画は購入済みか、資金が足りません", true);
   });
   const closeMenu = () => menuEl.classList.add("hidden");
   $("menu-button").addEventListener("click", () => (menuEl.classList.contains("hidden") ? openMenu() : closeMenu()));
