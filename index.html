@@ -138,6 +138,8 @@
       .custom input { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid #4a525c; background: #1b1f24; color: #fff; width: 220px; }
       .btn { font: inherit; color: #fff; background: #3a4048; border: 2px solid transparent; border-radius: 6px; padding: 6px 12px; cursor: pointer; }
       .btn:hover { background: #4a525c; }
+      .citizen-list { display: flex; flex-wrap: wrap; gap: 4px; }
+      .citizen-list .citizen { font-size: 11px; padding: 4px 7px; }
       .btn.primary { background: #2f4a37; border-color: #7bd88f; }
       .btn.danger.armed { background: #7a2f2a; border-color: #e05a4f; }
       .btn:disabled { opacity: .4; cursor: default; }
@@ -324,7 +326,7 @@
         <pre id="menu-history" class="sub" style="font:11px/1.25 monospace;white-space:pre;overflow-x:auto"></pre>
         <p id="menu-goal" class="selected-map"></p>
         <div id="menu-milestones"></div>
-        <p id="menu-citizens" class="sub"></p>
+        <div id="menu-citizens" class="sub"></div>
         <h2>土地・資源</h2>
         <p id="menu-resources"></p>
         <div class="row-end" style="justify-content:flex-start"><button id="land-buy" class="btn">周辺の土地を購入（1,000万円）</button></div>

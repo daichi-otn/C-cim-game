@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.25";
+const VERSION = "0.95.26";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -993,8 +993,18 @@ async function main() {
       row.textContent = `${m.done ? "✓" : "○"} ${m.name} — ${m.detail}`;
       box.appendChild(row);
     }
-    const people = g.city.people.slice(0, 8).map((p) => `#${p.id} ${Math.floor(p.ageDays / 360)}歳 / 家 (${p.home[0]},${p.home[1]}) / ${p.work ? `職場 (${p.work[0]},${p.work[1]})` : "無職"}`);
-    $("menu-citizens").textContent = people.length ? `住民サンプル: ${people.join("　")}` : "住民サンプル: まだいません";
+    const citizenBox = $("menu-citizens");
+    citizenBox.textContent = "";
+    if (!g.city.people.length) { citizenBox.textContent = "住民サンプル: まだいません"; return; }
+    const label = document.createElement("div"); label.textContent = "住民サンプル（押すと自宅を追跡）"; citizenBox.append(label);
+    const list = document.createElement("div"); list.className = "citizen-list"; citizenBox.append(list);
+    for (const p of g.city.people.slice(0, 8)) {
+      const b = document.createElement("button"); b.className = "btn citizen";
+      b.textContent = `#${p.id} ${Math.floor(p.ageDays / 360)}歳`;
+      b.title = `自宅 (${p.home[0]},${p.home[1]})${p.work ? `・職場 (${p.work[0]},${p.work[1]})` : "・無職"}`;
+      b.addEventListener("click", () => { camera.x = (p.home[0] + 0.5) * TILE_PX; camera.y = (p.home[1] + 0.5) * TILE_PX; showToast(`住民 #${p.id} の自宅を表示しました`); });
+      list.append(b);
+    }
   }
   function updateTransitMenu() {
     if (!g) return;
