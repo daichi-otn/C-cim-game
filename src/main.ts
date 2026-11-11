@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.20";
+const VERSION = "0.95.21";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -998,7 +998,8 @@ async function main() {
     if (!g) return;
     const city = g.city;
     const s = city.transitStats();
-    $("menu-transit").textContent = `バス ${s.lines} 路線 / 停留所 ${s.stops} / 車両 ${s.vehicles} / 利用者 ${s.ridership} 人（道路が必要）`;
+    const modes = city.transitLines.reduce((counts, line) => { counts[line.mode] = (counts[line.mode] ?? 0) + 1; return counts; }, {} as Record<string, number>);
+    $("menu-transit").textContent = `公共交通 ${s.lines} 路線（バス ${modes.bus ?? 0} / 地下鉄 ${modes.subway ?? 0} / 鉄道 ${modes.rail ?? 0}） / 停留所 ${s.stops} / 車両 ${s.vehicles} / 利用者 ${s.ridership} 人`;
     const old = document.querySelectorAll("#menu-transit + .row-end ~ .transit-line");
     old.forEach((el) => el.remove());
     let anchor = $("menu-transit").parentElement!;
