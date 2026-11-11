@@ -44,6 +44,7 @@ import { agingFactor, isOldEnough, REBUILD_CHANCE } from "./aging";
 import { DISTRICT_COLORS, DISTRICT_MAX_COUNT, DISTRICT_MAX_SIZE, DISTRICT_MIN_SIZE, densityAllowed, districtAt, districtRect, type Allowed, type District, type Greenery } from "./district";
 import { ageMixAt, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PENALTY, type HomeSlot, type Person } from "./people";
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
+import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitStop } from "./transit";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
 const MAX_LOT_SIDE = 6;
@@ -129,6 +130,8 @@ export interface CityData {
   people?: [number, number, number, number, number, number][];
   nextPersonId?: number;
   districts?: { id: number; name: string; color: number; x0: number; y0: number; x1: number; y1: number; taxRate?: number; allowed: boolean[]; wallet: number; greenery?: number }[];
+  /** 公共交通。旧データでは省略される。 */
+  transit?: TransitData;
 }
 
 export interface GameDate {
@@ -245,6 +248,11 @@ export class City {
   private _taxRate = DEFAULT_TAX_RATE;
   /** 地区 (作った順)。地区が重なるときは後から作ったものが優先する。 */
   readonly districts: District[] = [];
+  readonly transitStops: TransitStop[] = [];
+  readonly transitLines: TransitLine[] = [];
+  transitVersion = 0;
+  private nextTransitStopId = 1;
+  private nextTransitLineId = 1;
   private nextDistrictId = 1;
   /** 地区が変わるたびに増える (描画が作り直すかの判断用)。 */
   districtsVersion = 0;
@@ -303,6 +311,7 @@ export class City {
       people: this.people.map((p) => [p.id, p.home[0], p.home[1], p.ageDays, p.work ? p.work[0] : -1, p.work ? p.work[1] : -1] as [number, number, number, number, number, number]),
       nextPersonId: this.nextPersonId,
       districts: this.districts.map((g) => ({ id: g.id, name: g.name, color: g.color, x0: g.x0, y0: g.y0, x1: g.x1, y1: g.y1, taxRate: g.taxRate, allowed: [...g.allowed] as Allowed, wallet: g.wallet, greenery: g.greenery })),
+      transit: { nextStopId: this.nextTransitStopId, nextLineId: this.nextTransitLineId, stops: this.transitStops.map((s) => ({ ...s })), lines: this.transitLines.map((l) => ({ ...l, stopIds: [...l.stopIds] })) },
     };
   }
 
@@ -347,6 +356,13 @@ export class City {
     }
     if (city.districts.length > DISTRICT_MAX_COUNT) throw new Error("地区の数が多すぎます");
     city.nextDistrictId = Math.max(1, ...city.districts.map((g) => g.id + 1));
+    if (d.transit !== undefined) {
+      validateTransitData(d.transit);
+      city.transitStops.push(...d.transit.stops.map((s) => ({ ...s })));
+      city.transitLines.push(...d.transit.lines.map((l) => ({ ...l, stopIds: [...l.stopIds] })));
+      city.nextTransitStopId = Math.max(d.transit.nextStopId, ...city.transitStops.map((s) => s.id + 1));
+      city.nextTransitLineId = Math.max(d.transit.nextLineId, ...city.transitLines.map((l) => l.id + 1));
+    }
     // 建った日を持たない昔のデータの建物は、読み込んだ日に建ったものとする (いきなり建て替えの候補にしない)
     const builtDay = d.day;
     city.day = d.day;
@@ -402,6 +418,45 @@ export class City {
     city.zones.version++;
     city.facilitiesVersion++;
     return city;
+  }
+
+  /** 道路の両端から簡単なバス路線を作る。停留所は道路上に置き、旧セーブにも保存できる。 */
+  addBusLine(): boolean {
+    const edges = [...this.graph.edges.values()];
+    if (edges.length === 0) return false;
+    const first = this.graph.nodes.get(edges[0]!.a)!;
+    const last = this.graph.nodes.get(edges[edges.length - 1]!.b)!;
+    const stops = [first, last];
+    const stopIds = stops.map((p) => {
+      const stop = { id: this.nextTransitStopId++, x: p.x, y: p.y, name: `バス停${this.nextTransitStopId - 1}` };
+      this.transitStops.push(stop); return stop.id;
+    });
+    this.transitLines.push({ id: this.nextTransitLineId, name: `バス ${this.nextTransitLineId} 系統`, mode: "bus", stopIds, vehicles: Math.max(1, Math.min(8, Math.ceil(edges.length / 8))), ridership: 0 });
+    this.nextTransitLineId++;
+    this.transitVersion++;
+    this.updateTransit();
+    return true;
+  }
+
+  removeBusLine(id: number): boolean {
+    const i = this.transitLines.findIndex((line) => line.id === id);
+    if (i < 0) return false;
+    const [line] = this.transitLines.splice(i, 1);
+    const used = new Set(this.transitLines.flatMap((l) => l.stopIds));
+    for (let j = this.transitStops.length - 1; j >= 0; j--) if (!used.has(this.transitStops[j]!.id) && line?.stopIds.includes(this.transitStops[j]!.id)) this.transitStops.splice(j, 1);
+    this.transitVersion++;
+    this.updateTransit();
+    return true;
+  }
+
+  updateTransit(): void {
+    const population = this.zones.totals().population;
+    const stops = this.transitStops.length;
+    for (const line of this.transitLines) line.ridership = transitRidership(population, stops, this.transitLines.length) * Math.max(1, Math.round(line.stopIds.length / 2));
+  }
+
+  transitStats(): { lines: number; stops: number; vehicles: number; ridership: number } {
+    return { lines: this.transitLines.length, stops: this.transitStops.length, vehicles: this.transitLines.reduce((sum, line) => sum + line.vehicles, 0), ridership: this.transitLines.reduce((sum, line) => sum + line.ridership, 0) };
   }
 
   /** 地区を作る。囲んだ 2 点 (タイル) で範囲を決める。 */
@@ -779,6 +834,7 @@ export class City {
       }
     }
     this.utilities = util;
+    this.updateTransit();
     return spare;
   }
 

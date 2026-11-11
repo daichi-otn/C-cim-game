@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.14";
+const VERSION = "0.95.15";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -963,6 +963,7 @@ async function main() {
     updateDamageMenu();
     updateRoadDamageMenu();
     updateProgressMenu();
+    updateTransitMenu();
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
@@ -980,6 +981,24 @@ async function main() {
       row.style.cssText = "font-size:12px;color:" + (m.done ? "#7bd88f" : "#9aa5b1") + ";margin:2px 0";
       row.textContent = `${m.done ? "✓" : "○"} ${m.name} — ${m.detail}`;
       box.appendChild(row);
+    }
+  }
+  function updateTransitMenu() {
+    if (!g) return;
+    const city = g.city;
+    const s = city.transitStats();
+    $("menu-transit").textContent = `バス ${s.lines} 路線 / 停留所 ${s.stops} / 車両 ${s.vehicles} / 利用者 ${s.ridership} 人（道路が必要）`;
+    const old = document.querySelectorAll("#menu-transit + .row-end ~ .transit-line");
+    old.forEach((el) => el.remove());
+    let anchor = $("menu-transit").parentElement!;
+    for (const line of city.transitLines) {
+      const row = document.createElement("div"); row.className = "transit-line"; row.style.cssText = "display:flex;align-items:center;gap:8px;margin:4px 0;font-size:12px";
+      const label = document.createElement("span"); label.textContent = `${line.name}: ${line.stopIds.length}停留所 / ${line.ridership}人`; label.style.flex = "1";
+      const button = document.createElement("button"); button.className = "btn"; button.textContent = "廃止";
+      button.addEventListener("click", () => { city.removeBusLine(line.id); updateTransitMenu(); });
+      row.append(label, button); anchor.after(row);
+      // 次の行は直前の行の後ろへ並べる
+      anchor = row;
     }
   }
   function updateLoanMenu() {
@@ -1048,6 +1067,11 @@ async function main() {
     if (!g) return;
     g.city.welfarePolicy = (event.target as HTMLInputElement).checked;
     g.city.refresh();
+  });
+  $("transit-add-bus").addEventListener("click", () => {
+    if (!g) return;
+    if (g.city.addBusLine()) { updateTransitMenu(); reportMenu("バス路線を追加しました"); }
+    else reportMenu("先に道路を1本以上建設してください", true);
   });
   const closeMenu = () => menuEl.classList.add("hidden");
   $("menu-button").addEventListener("click", () => (menuEl.classList.contains("hidden") ? openMenu() : closeMenu()));
