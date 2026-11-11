@@ -44,8 +44,9 @@ import { agingFactor, isOldEnough, REBUILD_CHANCE } from "./aging";
 import { DISTRICT_COLORS, DISTRICT_MAX_COUNT, DISTRICT_MAX_SIZE, DISTRICT_MIN_SIZE, densityAllowed, districtAt, districtRect, type Allowed, type District, type Greenery } from "./district";
 import { ageMixAt, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PENALTY, type HomeSlot, type Person } from "./people";
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
-import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitStop } from "./transit";
+import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitMode, type TransitStop } from "./transit";
 import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
+import { PRIMARY_NAMES, PRIMARY_RESOURCE, primaryOutput, type PrimaryIndustry, type PrimaryIndustryType } from "./primaryIndustry";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
 const MAX_LOT_SIDE = 6;
@@ -135,6 +136,7 @@ export interface CityData {
   transit?: TransitData;
   /** 購入済み土地の左上 [x,y]。旧データでは中心区画だけを所有する。 */
   ownedLand?: [number, number][];
+  industries?: PrimaryIndustry[];
 }
 
 export interface GameDate {
@@ -257,6 +259,8 @@ export class City {
   private nextTransitStopId = 1;
   private nextTransitLineId = 1;
   readonly ownedLand = new Set<string>(["0,0"]);
+  readonly industries: PrimaryIndustry[] = [];
+  private nextIndustryId = 1;
   private nextDistrictId = 1;
   /** 地区が変わるたびに増える (描画が作り直すかの判断用)。 */
   districtsVersion = 0;
@@ -317,6 +321,7 @@ export class City {
       districts: this.districts.map((g) => ({ id: g.id, name: g.name, color: g.color, x0: g.x0, y0: g.y0, x1: g.x1, y1: g.y1, taxRate: g.taxRate, allowed: [...g.allowed] as Allowed, wallet: g.wallet, greenery: g.greenery })),
       transit: { nextStopId: this.nextTransitStopId, nextLineId: this.nextTransitLineId, stops: this.transitStops.map((s) => ({ ...s })), lines: this.transitLines.map((l) => ({ ...l, stopIds: [...l.stopIds] })) },
       ownedLand: [...this.ownedLand].map((key) => key.split(",").map(Number) as [number, number]),
+      industries: this.industries.map((industry) => ({ ...industry })),
     };
   }
 
@@ -374,6 +379,11 @@ export class City {
       for (const [x, y] of d.ownedLand) city.ownedLand.add(`${x},${y}`);
       if (city.ownedLand.size === 0) city.ownedLand.add("0,0");
     }
+    for (const industry of d.industries ?? []) {
+      if (!Number.isInteger(industry.id) || industry.id < 1 || !["farm", "forestry", "mine", "oil"].includes(industry.type) || !Number.isInteger(industry.x) || !Number.isInteger(industry.y) || !Number.isInteger(industry.workers) || industry.workers < 1 || !Number.isInteger(industry.output) || industry.output < 0) throw new Error("一次産業のデータが不正です");
+      city.industries.push({ ...industry });
+    }
+    city.nextIndustryId = Math.max(1, ...city.industries.map((industry) => industry.id + 1));
     // 建った日を持たない昔のデータの建物は、読み込んだ日に建ったものとする (いきなり建て替えの候補にしない)
     const builtDay = d.day;
     city.day = d.day;
@@ -442,8 +452,24 @@ export class City {
 
   resourceStats(): Record<ResourceType, number> { return resourceSummary(this.seed, this.ownedLand); }
 
-  /** 道路の両端から簡単なバス路線を作る。停留所は道路上に置き、旧セーブにも保存できる。 */
-  addBusLine(): boolean {
+  addIndustry(type: PrimaryIndustryType): boolean {
+    if (!this.canAfford(5_000_000)) return false;
+    const resource = PRIMARY_RESOURCE[type];
+    for (const key of this.ownedLand) {
+      const [x, y] = key.split(",").map(Number) as [number, number];
+      for (let dy = 0; dy < PARCEL_SIZE; dy += 2) for (let dx = 0; dx < PARCEL_SIZE; dx += 2) {
+        if (this.resourceStats()[resource] <= this.industries.filter((i) => i.type === type).length) continue;
+        const industry = { id: this.nextIndustryId++, type, x: x + dx, y: y + dy, workers: 10, output: primaryOutput(10) };
+        this.industries.push(industry); this.money -= this.devMode ? 0 : 5_000_000; return true;
+      }
+    }
+    return false;
+  }
+
+  industryStats(): { count: number; output: number; names: string } { return { count: this.industries.length, output: this.industries.reduce((sum, i) => sum + i.output, 0), names: this.industries.map((i) => PRIMARY_NAMES[i.type]).join("・") }; }
+
+  /** 道路の両端から路線を作る。バスは道路上、鉄道・地下鉄は駅として同じ停留所モデルを使う。 */
+  addTransitLine(mode: TransitMode = "bus"): boolean {
     const edges = [...this.graph.edges.values()];
     if (edges.length === 0) return false;
     const first = this.graph.nodes.get(edges[0]!.a)!;
@@ -453,12 +479,15 @@ export class City {
       const stop = { id: this.nextTransitStopId++, x: p.x, y: p.y, name: `バス停${this.nextTransitStopId - 1}` };
       this.transitStops.push(stop); return stop.id;
     });
-    this.transitLines.push({ id: this.nextTransitLineId, name: `バス ${this.nextTransitLineId} 系統`, mode: "bus", stopIds, vehicles: Math.max(1, Math.min(8, Math.ceil(edges.length / 8))), ridership: 0 });
+    const label = mode === "bus" ? "バス" : mode === "subway" ? "地下鉄" : "鉄道";
+    this.transitLines.push({ id: this.nextTransitLineId, name: `${label} ${this.nextTransitLineId} 系統`, mode, stopIds, vehicles: Math.max(1, Math.min(8, Math.ceil(edges.length / 8))), ridership: 0 });
     this.nextTransitLineId++;
     this.transitVersion++;
     this.updateTransit();
     return true;
   }
+
+  addBusLine(): boolean { return this.addTransitLine("bus"); }
 
   removeBusLine(id: number): boolean {
     const i = this.transitLines.findIndex((line) => line.id === id);
