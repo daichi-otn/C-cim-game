@@ -21,6 +21,7 @@ import {
   type Service,
 } from "./facilities";
 import { createStatefulRng, hash2, type StatefulRng } from "./rng";
+import { emergencyRoute } from "./emergencyRoute";
 import { Tile, tileAt } from "./terrain";
 import { RoadGraph, isAccessEdge, projectOnSegment, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
@@ -1258,11 +1259,12 @@ export class City {
   /** 同じ道路網につながる消防署だけが現場に対応できる。 */
   private fireStationFor(cell: ZoneCell): boolean {
     const center = lotCenter(cell);
+    const access = this.zones.lotCells(cell).map((t) => ({ x: t.x + 0.5, y: t.y + 0.5 })).sort((a, b) => this.graph.distanceToRoad(a.x, a.y, ZONE_REACH) - this.graph.distanceToRoad(b.x, b.y, ZONE_REACH))[0] ?? center;
     return cell.net > 0 && [...this.facilities.values()].some((f) => {
       if (f.type !== FacilityKind.Fire || this.facilityNet.get(f.id) !== cell.net) return false;
       const station = facilityCenter(f);
       if (!this.facilityActive(f)) return false;
-      return Math.hypot(center.x - station.x, center.y - station.y) <= FACILITY_SPECS[FacilityKind.Fire].radius;
+      return Math.hypot(center.x - station.x, center.y - station.y) <= FACILITY_SPECS[FacilityKind.Fire].radius && emergencyRoute(this.graph, station, access) !== null;
     });
   }
 

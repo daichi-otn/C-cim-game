@@ -38,6 +38,19 @@ describe("火災", () => {
     expect(near.building).toBeGreaterThan(0);
   });
 
+  it("同じ道路網でも一方通行で現場に行けなければ消防が到達できない", () => {
+    const { city, x0, roadY } = growingCity();
+    forceFacility(city, FacilityType.Fire, x0 + 1, roadY - 2);
+    const near = [...city.zones.cells.values()].find((c) => c.building > 0 && c.part === undefined && c.x >= x0 + 5 && c.x <= x0 + 10)!;
+    expect(near).toBeDefined();
+    city.graph.addRoad(x0 + 39.5, roadY + 0.5, x0 + 0.5, roadY + 0.5, undefined, true);
+    city.refresh(); city.fire = { x: near.x, y: near.y, started: city.day };
+    expect(city.notices().some((s) => s.includes("消防署が対応中"))).toBe(false);
+    city.graph.addRoad(x0 + 0.5, roadY + 0.5, x0 + 39.5, roadY + 0.5, undefined, true);
+    city.refresh();
+    expect(city.notices().some((s) => s.includes("消防署が対応中"))).toBe(true);
+  });
+
   it("災害が有効な街だけで火災が発生し、セーブ後も同じ結果になる", () => {
     const { city } = growingCity();
     city.fire = null;
