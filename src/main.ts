@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.15";
+const VERSION = "0.95.16";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -964,6 +964,9 @@ async function main() {
     updateRoadDamageMenu();
     updateProgressMenu();
     updateTransitMenu();
+    const volume = $<HTMLInputElement>("menu-volume");
+    volume.value = String(soundscape.volumeLevel);
+    $("menu-volume-value").textContent = `${Math.round(soundscape.volumeLevel * 100)}%`;
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
@@ -1886,6 +1889,11 @@ async function main() {
   soundBtn.addEventListener("click", () => {
     soundscape.setEnabled(!soundscape.isEnabled);
     showSoundState();
+  });
+  $("menu-volume").addEventListener("input", (event) => {
+    const value = Number((event.target as HTMLInputElement).value);
+    soundscape.setVolume(value);
+    $("menu-volume-value").textContent = `${Math.round(value * 100)}%`;
   });
   let nearResidents = 0;
   let nearAt = -1000;

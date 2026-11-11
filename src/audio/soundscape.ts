@@ -7,6 +7,7 @@ import { chatterLevel, falloff, HEAR_RANGE, panOf, TRAFFIC_VOLUME, trafficLevel 
  * BGM は、タイトルは明るく、街はラジオ風に流す。
  */
 const ENABLED_KEY = "ccim.audio.v1";
+const VOLUME_KEY = "ccim.volume.v1";
 const LOOK_AHEAD = 0.25;
 
 /** 毎フレーム、音を決めるために渡す、今の街の様子。位置はすべてタイル。 */
@@ -42,6 +43,15 @@ export function loadEnabled(): boolean {
   }
 }
 
+function loadVolume(): number {
+  try {
+    const value = Number(localStorage.getItem(VOLUME_KEY));
+    return Number.isFinite(value) ? Math.min(1, Math.max(0, value)) : 0.8;
+  } catch {
+    return 0.8;
+  }
+}
+
 export class Soundscape {
   private ctx: AudioContext | null = null;
   private master!: GainNode;
@@ -52,6 +62,7 @@ export class Soundscape {
   private craneV!: { gain: GainNode; pan: StereoPannerNode };
   private chatterV!: { gain: GainNode };
   private enabled = loadEnabled();
+  private volume = loadVolume();
   private song: Song = CITY_SONG;
   private playing = false;
   private timer = 0;
@@ -63,6 +74,14 @@ export class Soundscape {
 
   get isEnabled(): boolean {
     return this.enabled;
+  }
+
+  get volumeLevel(): number { return this.volume; }
+
+  setVolume(level: number): void {
+    this.volume = Math.min(1, Math.max(0, level));
+    try { localStorage.setItem(VOLUME_KEY, String(this.volume)); } catch { /* 設定を保存できない環境でも動かす */ }
+    if (this.ctx) this.master.gain.setTargetAtTime(this.enabled ? this.volume : 0, this.ctx.currentTime, 0.05);
   }
 
   /** 最初の操作のとき (ブラウザは、押されるまで音を出させない)。音の仕組みを作って、BGM を流す。 */
@@ -79,7 +98,7 @@ export class Soundscape {
     } catch {
       /* 保存できなくても、音は変えられる */
     }
-    if (this.ctx) this.master.gain.setTargetAtTime(on ? 0.8 : 0, this.ctx.currentTime, 0.05);
+    if (this.ctx) this.master.gain.setTargetAtTime(on ? this.volume : 0, this.ctx.currentTime, 0.05);
   }
 
   /** BGM を変える (タイトル・街)。同じ曲なら、そのまま流す。 */
@@ -122,7 +141,7 @@ export class Soundscape {
     const ctx = new AudioContext();
     this.ctx = ctx;
     this.master = ctx.createGain();
-    this.master.gain.value = this.enabled ? 0.8 : 0;
+    this.master.gain.value = this.enabled ? this.volume : 0;
     this.master.connect(ctx.destination);
     // BGM: 街はラジオ風 (こもった音)、タイトルはそのまま
     this.radio = ctx.createBiquadFilter();
