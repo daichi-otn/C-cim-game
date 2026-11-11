@@ -51,6 +51,8 @@ export const MONTHS_PER_YEAR = 12;
 export const START_MONEY = 300_000_000;
 export const FLOOD_RADIUS = 8;
 export const FLOOD_DAYS = 5;
+export const QUAKE_RADIUS = 12;
+export const QUAKE_DAYS = 3;
 /** 道路 1 タイル (約 10m の区間) あたりの建設費と、毎月の維持費 (円)。 */
 export const ROAD_COST_PER_TILE = 600_000;
 export const ROAD_UPKEEP_PER_TILE = 5_000;
@@ -108,6 +110,7 @@ export interface CityData {
   fire?: { x: number; y: number; started: number } | null;
   outage?: { facilityId: number; started: number } | null;
   flood?: { x: number; y: number; started: number } | null;
+  quake?: { x: number; y: number; started: number } | null;
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -177,6 +180,7 @@ export class City {
   fire: { x: number; y: number; started: number } | null = null;
   outage: { facilityId: number; started: number } | null = null;
   flood: { x: number; y: number; started: number } | null = null;
+  quake: { x: number; y: number; started: number } | null = null;
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -275,6 +279,7 @@ export class City {
       fire: this.fire ? { ...this.fire } : null,
       outage: this.outage ? { ...this.outage } : null,
       flood: this.flood ? { ...this.flood } : null,
+      quake: this.quake ? { ...this.quake } : null,
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -297,6 +302,7 @@ export class City {
     if (d.fire != null && (typeof d.fire !== "object" || !isInt(d.fire.x, -1e9, 1e9) || !isInt(d.fire.y, -1e9, 1e9) || !isInt(d.fire.started, 0, d.day) || !d.disastersEnabled)) throw new Error("火災のデータが不正です");
     if (d.outage != null && (typeof d.outage !== "object" || !isInt(d.outage.facilityId, 1) || !isInt(d.outage.started, 0, d.day) || !d.disastersEnabled)) throw new Error("停電のデータが不正です");
     if (d.flood != null && (typeof d.flood !== "object" || !isInt(d.flood.x, -1e9, 1e9) || !isInt(d.flood.y, -1e9, 1e9) || !isInt(d.flood.started, 0, d.day) || !d.disastersEnabled)) throw new Error("洪水のデータが不正です");
+    if (d.quake != null && (typeof d.quake !== "object" || !isInt(d.quake.x, -1e9, 1e9) || !isInt(d.quake.y, -1e9, 1e9) || !isInt(d.quake.started, 0, d.day) || !d.disastersEnabled)) throw new Error("地震のデータが不正です");
     if (!isInt(d.rngState, 0, 0xffffffff) || !isInt(d.nextFacilityId, 1)) throw new Error("街の内部状態が不正です");
     if (!Array.isArray(d.zones) || !Array.isArray(d.facilities)) throw new Error("ゾーンや施設のデータが不正です");
     if (d.outage) {
@@ -327,6 +333,7 @@ export class City {
     city.fire = d.fire ? { ...d.fire } : null;
     city.outage = d.outage ? { ...d.outage } : null;
     city.flood = d.flood ? { ...d.flood } : null;
+    city.quake = d.quake ? { ...d.quake } : null;
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
     if (d.people !== undefined) {
@@ -880,6 +887,7 @@ export class City {
       if (f) out.push(`${FACILITY_SPECS[f.type].name}が故障して停電しています (${f.x}, ${f.y})。自動復旧まで残り ${Math.max(0, 7 - (this.day - this.outage.started))} 日`);
     }
     if (this.flood) out.push(`洪水が発生しています (${this.flood.x}, ${this.flood.y} 付近)。浸水はあと ${Math.max(0, FLOOD_DAYS - (this.day - this.flood.started))} 日で引く見込みです`);
+    if (this.quake) out.push(`地震が発生しました (${this.quake.x}, ${this.quake.y} 付近)。余震のため周辺の建設を見合わせています`);
     const hasZones = this.zones.cells.size > 0;
     for (const k of SERVICES) {
       const u = this.utilities[k];
@@ -1029,6 +1037,7 @@ export class City {
       if (!densityAllowed(this.districtOf(cell), cell.density)) return false; // 地区の規制で、この密度は禁止されている
       if (this.devMode) return true; // 供給・道路の太さ・道路網は問わず、空いていれば建つ
       if (tiles.some((t) => this.isFlooded(t.x + 0.5, t.y + 0.5))) return false;
+      if (tiles.some((t) => this.isQuakeArea(t.x + 0.5, t.y + 0.5))) return false;
       // 出入口は、敷地のうち道路につながっているタイルのうち、面している道路がいちばん太いもの
       let front = tiles[0]!;
       let cap = -1;
@@ -1064,8 +1073,41 @@ export class City {
     this.updateFire();
     this.updateOutage();
     this.updateFlood();
+    this.updateQuake();
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
     if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
+  }
+
+  isQuakeArea(x: number, y: number): boolean {
+    return !this.devMode && !!this.quake && Math.hypot(x - this.quake.x, y - this.quake.y) <= QUAKE_RADIUS;
+  }
+
+  /** 地震は建物に被害を与え、余震が収まれば空き区画から再建する。 */
+  private updateQuake(): void {
+    if (!this.disastersEnabled || this.devMode) return;
+    if (this.quake) {
+      const age = this.day - this.quake.started;
+      if (age === 1) {
+        let damaged = false;
+        for (const c of [...this.zones.cells.values()]) {
+          if (c.building === 0 || c.part !== undefined) continue;
+          const ctr = lotCenter(c);
+          if (!this.isQuakeArea(ctr.x, ctr.y)) continue;
+          if ((c.x !== this.quake.x || c.y !== this.quake.y) && hash2(this.seed ^ this.quake.started ^ 0x3a42, c.x, c.y) >= 0.3) continue;
+          this.zones.demolishLot(c);
+          c.building = 0; c.residents = 0; c.built = 0; c.aging = 1; c.w = 1; c.h = 1;
+          this.zones.version++; damaged = true;
+        }
+        if (damaged) { this.syncPeople(); this.refresh(); }
+      }
+      if (age >= QUAKE_DAYS) this.quake = null;
+      return;
+    }
+    if (hash2(this.seed ^ 0x19b8a71, this.day, 0) >= 1 / 900) return;
+    const buildings = [...this.zones.cells.values()].filter((c) => c.building > 0 && c.part === undefined);
+    if (!buildings.length) return;
+    const c = buildings[Math.floor(hash2(this.seed ^ 0x19b8a71, this.day, 1) * buildings.length)]!;
+    this.quake = { x: c.x, y: c.y, started: this.day };
   }
 
   /** 洪水の間、範囲内の施設と建物は稼働できない。 */
