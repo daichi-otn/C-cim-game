@@ -308,56 +308,57 @@
     </div>
     <div id="menu" class="overlay hidden">
       <div class="sheet small">
-        <h2 style="margin-top:0">メニュー</h2>
+        <h2 style="margin-top:0" data-i18n="menu">メニュー</h2>
         <p id="menu-map"></p>
         <div id="menu-outage" class="hidden"><h2>停電・復旧</h2><p id="menu-outage-detail"></p><button id="repair-outage" class="btn">200万円で今すぐ修理</button></div>
         <div id="menu-damaged-facilities" class="hidden"><h2>地震で損傷した施設</h2><p>10日で自動復旧します。1施設につき200万円で即時修理できます。</p><div id="damaged-facilities-list"></div></div>
         <div id="menu-damaged-roads" class="hidden"><h2>地震で損傷した道路</h2><p>通行量と速度が低下します。8日で自動復旧し、1区間100万円で即時修理もできます。</p><div id="damaged-roads-list"></div></div>
-        <h2>先月の予算内訳（市の財布）</h2>
+        <h2 data-i18n="budget">先月の予算内訳（市の財布）</h2>
         <p id="menu-budget"></p>
-        <h2>融資</h2>
+        <h2 data-i18n="loans">融資</h2>
         <p id="menu-loan"></p>
         <p>1億円単位で借入・返済できます。借入上限は10億円、利息は毎月残高の1%です。</p>
         <div><button id="loan-borrow" class="btn">1億円借りる</button> <button id="loan-repay" class="btn">1億円返す</button></div>
-        <h2>条例</h2>
+        <h2 data-i18n="policies">条例</h2>
         <label><input type="checkbox" id="policy-welfare"> 暮らしの支援（幸福度を最大10ポイント上げる。毎月住民1人につき1,000円）</label>
         <label style="display:block;margin-top:8px"><input type="checkbox" id="policy-disaster"> 災害対策（毎月住民1人につき500円。被害を減らし、復旧を早める）</label>
-        <h2>統計・目標</h2>
+        <h2 data-i18n="stats">統計・目標</h2>
         <p id="menu-statistics"></p>
         <pre id="menu-history" class="sub" style="font:11px/1.25 monospace;white-space:pre;overflow-x:auto"></pre>
         <p id="menu-goal" class="selected-map"></p>
         <div id="menu-milestones"></div>
         <div id="menu-citizens" class="sub"></div>
-        <h2>土地・資源</h2>
+        <h2 data-i18n="land">土地・資源</h2>
         <p id="menu-resources"></p>
         <div class="row-end" style="justify-content:flex-start"><button id="land-buy" class="btn">周辺の土地を購入（1,000万円）</button></div>
         <p id="menu-terrain" class="sub">整地・水路・植林は画面中央のタイルに適用します。</p>
         <div class="row-end" style="justify-content:flex-start"><button id="terrain-level" class="btn">整地（100万円）</button><button id="terrain-water" class="btn">水路（100万円）</button><button id="terrain-forest" class="btn">植林（30万円）</button></div>
         <p id="menu-industry" class="sub"></p>
         <div class="row-end" style="justify-content:flex-start"><button id="industry-farm" class="btn">農場</button><button id="industry-forestry" class="btn">林業</button><button id="industry-mine" class="btn">鉱山</button><button id="industry-oil" class="btn">油田</button></div>
-        <h2>公共交通</h2>
+        <h2 data-i18n="transit">公共交通</h2>
         <p id="menu-transit"></p>
         <div class="row-end" style="justify-content:flex-start"><button id="transit-add-bus" class="btn">バス路線</button><button id="transit-add-subway" class="btn">地下鉄</button><button id="transit-add-rail" class="btn">鉄道</button></div>
         <p id="menu-parking" class="sub"></p>
         <div class="row-end" style="justify-content:flex-start"><button id="parking-add" class="btn">駐車場を整備（300万円）</button></div>
-        <h2>セーブ・ロード</h2>
+        <h2 data-i18n="save">セーブ・ロード</h2>
         <div id="menu-slots"></div>
         <div id="menu-msg"></div>
-        <h2>表示</h2>
+        <h2 data-i18n="display">表示</h2>
         <label style="display:block;color:#9aa5b1"><input type="checkbox" id="menu-land"> 地価マップ <span style="font-size:12px">(区画を地価の色で塗る。青 = 安い、赤 = 高い。地価は道路・公共サービス・環境・好ましい施設で決まり、高い場所の建物は税が上乗せされる)</span></label>
         <label style="display:block;margin-top:14px;color:#9aa5b1"><input type="checkbox" id="menu-dev"> 開発者モード <span style="font-size:12px">(供給・ごみ・公共サービス・外部接続・環境・渋滞・需要・お金の条件をすべて無視する。見た目や動きの確認用)</span></label>
-        <h2>グラフィック</h2>
+        <h2 data-i18n="graphics">グラフィック</h2>
         <p class="sub" style="margin:-4px 0 6px;font-size:12px;color:#9aa5b1">項目ごとに、無効・低・中・高・ウルトラ高から選べます。標準は「中」(描画が軽い環境では「低」から始まります)。「無効」は、その項目を一番軽くします。</p>
         <div id="menu-graphics"></div>
         <p style="margin:10px 0 0;font-size:12px;color:#9aa5b1"><a href="THIRD_PARTY_LICENSES.txt" target="_blank" rel="noopener" style="color:#9ad0ff">ライセンス表示 (three.js)</a></p>
         <div class="row-end">
-          <button id="menu-help" class="btn">使い方・操作キー</button>
-          <button id="menu-tutorial" class="btn">チュートリアル (新しい街で)</button>
+          <button id="menu-help" class="btn" data-i18n="help">使い方・操作キー</button>
+          <button id="menu-tutorial" class="btn" data-i18n="tutorial">チュートリアル (新しい街で)</button>
+          <button id="menu-language" class="btn" data-i18n="language">言語: 日本語</button>
           <button id="menu-sound" class="btn">音: あり</button>
           <label style="display:flex;align-items:center;gap:6px;color:#d4dae2">音量 <input id="menu-volume" type="range" min="0" max="1" step="0.05" style="width:110px"><span id="menu-volume-value">80%</span></label>
           <button id="menu-alert-test" class="btn hidden">緊急速報のテスト (開発用)</button>
-          <button id="menu-title" class="btn">タイトルへ (マップ選択)</button>
-          <button id="menu-close" class="btn primary">閉じる</button>
+          <button id="menu-title" class="btn" data-i18n="titleBack">タイトルへ (マップ選択)</button>
+          <button id="menu-close" class="btn primary" data-i18n="close">閉じる</button>
         </div>
       </div>
     </div>

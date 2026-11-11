@@ -38,8 +38,9 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
+import { applyLocale, loadLocale, text, LOCALE_STORAGE_KEY, type Locale } from "./i18n";
 
-const VERSION = "0.95.30";
+const VERSION = "0.95.31";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -156,6 +157,8 @@ async function main() {
     return;
   }
   const camera = world.view;
+  let locale: Locale = loadLocale();
+  applyLocale(document, locale);
   // ホスティング (Netlify) が右下に重ねるバッジ (id: nl-badge-frame) があるときは、画面の下の道具が隠れないように、位置を上げる
   const markBadge = () => document.body.classList.toggle("has-badge", document.getElementById("nl-badge-frame") !== null);
   markBadge();
@@ -972,6 +975,7 @@ async function main() {
     $("menu-volume-value").textContent = `${Math.round(soundscape.volumeLevel * 100)}%`;
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     ($("policy-disaster") as HTMLInputElement).checked = g.city.disasterPreparedness;
+    $("menu-language").textContent = text("language", locale);
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
     menuSeen = true;
@@ -1158,6 +1162,12 @@ async function main() {
   const closeMenu = () => menuEl.classList.add("hidden");
   $("menu-button").addEventListener("click", () => (menuEl.classList.contains("hidden") ? openMenu() : closeMenu()));
   $("menu-close").addEventListener("click", closeMenu);
+  $("menu-language").addEventListener("click", () => {
+    locale = locale === "ja" ? "en" : "ja";
+    applyLocale(document, locale);
+    try { localStorage.setItem(LOCALE_STORAGE_KEY, locale); } catch { /* 現在の画面は切り替える */ }
+    $("menu-language").textContent = text("language", locale);
+  });
   $("menu-title").addEventListener("click", openTitle);
   /** グラフィック設定の欄を作る: 項目ごとに 5 つの段階のボタン。 */
   const graphicsBox = $("menu-graphics");
