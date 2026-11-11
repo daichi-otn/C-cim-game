@@ -107,6 +107,18 @@ function outageTexture(): THREE.CanvasTexture {
   textures.set("outage", tex); return tex;
 }
 
+function floodTexture(): THREE.CanvasTexture {
+  const hit = textures.get("flood");
+  if (hit) return hit;
+  const c = document.createElement("canvas"); c.width = c.height = 64;
+  const ctx = c.getContext("2d")!;
+  ctx.fillStyle = "#1460ac"; ctx.beginPath(); ctx.arc(32, 32, 30, 0, Math.PI * 2); ctx.fill();
+  ctx.font = "700 36px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+  ctx.fillStyle = "#ffffff"; ctx.fillText("水", 32, 33);
+  const tex = new THREE.CanvasTexture(c); tex.colorSpace = THREE.SRGBColorSpace;
+  textures.set("flood", tex); return tex;
+}
+
 /**
  * 画面に重ねる印: 施設の種類のバッジ (構造物の上に浮かぶ)・環境の色分け (O キー)・病人が多い住宅の赤い十字。
  * 施設・建物・日付が変わったときだけ作り直す (カメラに向くスプライト)。
@@ -129,7 +141,7 @@ export class Overlays3D {
 
   update(): void {
     const { city } = this;
-    const key = `${city.facilitiesVersion}:${city.zones.version}:${city.day}:${city.trafficVersion}:${this.showHeat}:${this.showLand}:${city.fire?.x}:${city.fire?.y}:${city.outage?.facilityId}`;
+    const key = `${city.facilitiesVersion}:${city.zones.version}:${city.day}:${city.trafficVersion}:${this.showHeat}:${this.showLand}:${city.fire?.x}:${city.fire?.y}:${city.outage?.facilityId}:${city.flood?.x}:${city.flood?.y}`;
     if (key === this.key) return;
     this.key = key;
     this.clear();
@@ -150,7 +162,13 @@ export class Overlays3D {
     }
     // 環境の色分けと、病人マーク
     const g = new GeoBuilder();
+    if (city.flood) {
+      const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: floodTexture(), depthTest: false, transparent: true }));
+      sp.position.set((city.flood.x + 0.5) * TILE, 24, (city.flood.y + 0.5) * TILE);
+      sp.scale.set(12, 12, 1); sp.renderOrder = 13; this.marks.add(sp);
+    }
     for (const c of city.zones.cells.values()) {
+      if (city.isFlooded(c.x + 0.5, c.y + 0.5)) g.rect(c.x * TILE, c.y * TILE, TILE, TILE, 1.2, 0x248ada);
       if (city.fire?.x === c.x && city.fire.y === c.y && c.building > 0) {
         const b = baseRect(c);
         const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: fireTexture(), depthTest: false, transparent: true }));

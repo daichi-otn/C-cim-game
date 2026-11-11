@@ -21,6 +21,7 @@ import {
   type Service,
 } from "./facilities";
 import { createStatefulRng, hash2, type StatefulRng } from "./rng";
+import { Tile, tileAt } from "./terrain";
 import { RoadGraph, isAccessEdge, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
 import { costMultOf, planPath } from "./structures";
@@ -48,6 +49,8 @@ const MAX_LOT_SIDE = 6;
 export const DAYS_PER_MONTH = 30;
 export const MONTHS_PER_YEAR = 12;
 export const START_MONEY = 300_000_000;
+export const FLOOD_RADIUS = 8;
+export const FLOOD_DAYS = 5;
 /** 道路 1 タイル (約 10m の区間) あたりの建設費と、毎月の維持費 (円)。 */
 export const ROAD_COST_PER_TILE = 600_000;
 export const ROAD_UPKEEP_PER_TILE = 5_000;
@@ -104,6 +107,7 @@ export interface CityData {
   disastersEnabled?: boolean;
   fire?: { x: number; y: number; started: number } | null;
   outage?: { facilityId: number; started: number } | null;
+  flood?: { x: number; y: number; started: number } | null;
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -172,6 +176,7 @@ export class City {
   disastersEnabled = false;
   fire: { x: number; y: number; started: number } | null = null;
   outage: { facilityId: number; started: number } | null = null;
+  flood: { x: number; y: number; started: number } | null = null;
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -269,6 +274,7 @@ export class City {
       disastersEnabled: this.disastersEnabled,
       fire: this.fire ? { ...this.fire } : null,
       outage: this.outage ? { ...this.outage } : null,
+      flood: this.flood ? { ...this.flood } : null,
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -290,6 +296,7 @@ export class City {
     if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");
     if (d.fire != null && (typeof d.fire !== "object" || !isInt(d.fire.x, -1e9, 1e9) || !isInt(d.fire.y, -1e9, 1e9) || !isInt(d.fire.started, 0, d.day) || !d.disastersEnabled)) throw new Error("火災のデータが不正です");
     if (d.outage != null && (typeof d.outage !== "object" || !isInt(d.outage.facilityId, 1) || !isInt(d.outage.started, 0, d.day) || !d.disastersEnabled)) throw new Error("停電のデータが不正です");
+    if (d.flood != null && (typeof d.flood !== "object" || !isInt(d.flood.x, -1e9, 1e9) || !isInt(d.flood.y, -1e9, 1e9) || !isInt(d.flood.started, 0, d.day) || !d.disastersEnabled)) throw new Error("洪水のデータが不正です");
     if (!isInt(d.rngState, 0, 0xffffffff) || !isInt(d.nextFacilityId, 1)) throw new Error("街の内部状態が不正です");
     if (!Array.isArray(d.zones) || !Array.isArray(d.facilities)) throw new Error("ゾーンや施設のデータが不正です");
     if (d.outage) {
@@ -319,6 +326,7 @@ export class City {
     city.disastersEnabled = d.disastersEnabled ?? false;
     city.fire = d.fire ? { ...d.fire } : null;
     city.outage = d.outage ? { ...d.outage } : null;
+    city.flood = d.flood ? { ...d.flood } : null;
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
     if (d.people !== undefined) {
@@ -717,6 +725,8 @@ export class City {
       if (net === 0) continue; // 道路につながっていない施設は供給できない
       const spec = FACILITY_SPECS[f.type];
       if (spec.service === null) continue; // 外部接続は供給しない
+      const fc = facilityCenter(f);
+      if (this.isFlooded(fc.x, fc.y)) continue;
       if (!this.devMode && this.outage?.facilityId === f.id) continue; // 故障した発電施設は復旧まで発電しない
       let s = spare.get(net);
       if (!s) spare.set(net, (s = { power: 0, water: 0, sewage: 0 }));
@@ -728,7 +738,8 @@ export class City {
       if (c.building === 0) continue;
       const s = spare.get(c.net);
       const load = this.loadOf(c);
-      c.served = this.devMode || (!!s && SERVICES.every((k) => s[k] >= load[k]));
+      const center = lotCenter(c);
+      c.served = this.devMode || (!this.isFlooded(center.x, center.y) && !!s && SERVICES.every((k) => s[k] >= load[k]));
       if (c.served) {
         for (const k of SERVICES) {
           if (s) s[k] -= load[k]; // 開発者モードでは、供給のない道路網の建物も「供給あり」になる
@@ -747,7 +758,7 @@ export class City {
   private calcCoverage(): void {
     const stats = emptyCoverage();
     this.schooledCells.clear();
-    const providers = [...this.facilities.values()].filter((f) => FACILITY_SPECS[f.type].coverage !== null && (this.facilityNet.get(f.id) ?? 0) !== 0);
+    const providers = [...this.facilities.values()].filter((f) => { const p = facilityCenter(f); return FACILITY_SPECS[f.type].coverage !== null && (this.facilityNet.get(f.id) ?? 0) !== 0 && !this.isFlooded(p.x, p.y); });
     let buildings = 0;
     let boostSum = 0;
     for (const c of this.zones.cells.values()) {
@@ -830,6 +841,8 @@ export class City {
       const w = FACILITY_SPECS[f.type].waste;
       const net = this.facilityNet.get(f.id) ?? 0;
       if (!w || net === 0) continue; // 道路につながっていない処理場は働かない
+      const fc = facilityCenter(f);
+      if (this.isFlooded(fc.x, fc.y)) continue;
       supply.set(net, (supply.get(net) ?? 0) + w);
       supplyTotal += w;
     }
@@ -866,6 +879,7 @@ export class City {
       const f = this.facilities.get(this.outage.facilityId);
       if (f) out.push(`${FACILITY_SPECS[f.type].name}が故障して停電しています (${f.x}, ${f.y})。自動復旧まで残り ${Math.max(0, 7 - (this.day - this.outage.started))} 日`);
     }
+    if (this.flood) out.push(`洪水が発生しています (${this.flood.x}, ${this.flood.y} 付近)。浸水はあと ${Math.max(0, FLOOD_DAYS - (this.day - this.flood.started))} 日で引く見込みです`);
     const hasZones = this.zones.cells.size > 0;
     for (const k of SERVICES) {
       const u = this.utilities[k];
@@ -920,7 +934,7 @@ export class City {
   /** 地価を区画ごとに求め、建物の平均から税の上乗せを決める。公共サービス・環境の計算の後に呼ぶ。 */
   private calcLand(): void {
     const amenityTypes = new Set<FacilityKind>([FacilityKind.Park, FacilityKind.School, FacilityKind.MiddleSchool, FacilityKind.HighSchool, FacilityKind.University, FacilityKind.Hospital, FacilityKind.Police, FacilityKind.Fire]);
-    const amenities = [...this.facilities.values()].filter((f) => amenityTypes.has(f.type)).map((f) => ({ c: facilityCenter(f) }));
+    const amenities = [...this.facilities.values()].filter((f) => { const p = facilityCenter(f); return amenityTypes.has(f.type) && !this.isFlooded(p.x, p.y); }).map((f) => ({ c: facilityCenter(f) }));
     this.landValues.clear();
     let sum = 0;
     let weight = 0;
@@ -947,6 +961,11 @@ export class City {
     this.calcAging();
     this.syncRoads();
     this.syncNetworks();
+    this.outsideNets.clear();
+    for (const f of this.facilities.values()) {
+      const p = facilityCenter(f), net = this.facilityNet.get(f.id) ?? 0;
+      if (f.type === FacilityKind.Outside && net !== 0 && !this.isFlooded(p.x, p.y)) this.outsideNets.add(net);
+    }
     const spare = this.allocateServices();
     this.calcCoverage();
     this.syncTraffic(this.zones.totals().population);
@@ -959,7 +978,8 @@ export class City {
       for (const c of this.zones.cells.values()) c.env = { ...cleanEnv(), cared: c.env.cared };
       this.health = emptyHealth();
     } else {
-      this.health = calcEnvironment(this.zones, this.graph, this.facilities.values(), this.traffic.flow, AIR_POLLUTION_MULT[this.weather], this.garbagePenalty);
+      const activeFacilities = [...this.facilities.values()].filter((f) => { const p = facilityCenter(f); return !this.isFlooded(p.x, p.y); });
+      this.health = calcEnvironment(this.zones, this.graph, activeFacilities, this.traffic.flow, AIR_POLLUTION_MULT[this.weather], this.garbagePenalty);
       this.happiness = Math.max(0, this.happiness - HEALTH_HAPPINESS_PENALTY * this.health.meanRisk);
       if (this.welfarePolicy && this.zones.totals().population > 0) this.happiness = Math.min(1, this.happiness + 0.1);
     }
@@ -1008,6 +1028,7 @@ export class City {
     this.zones.grow(() => this.rng.next(), chance, GROW_MAX_SPAWN, (cell, variant, tiles) => {
       if (!densityAllowed(this.districtOf(cell), cell.density)) return false; // 地区の規制で、この密度は禁止されている
       if (this.devMode) return true; // 供給・道路の太さ・道路網は問わず、空いていれば建つ
+      if (tiles.some((t) => this.isFlooded(t.x + 0.5, t.y + 0.5))) return false;
       // 出入口は、敷地のうち道路につながっているタイルのうち、面している道路がいちばん太いもの
       let front = tiles[0]!;
       let cap = -1;
@@ -1042,8 +1063,48 @@ export class City {
     this.day++;
     this.updateFire();
     this.updateOutage();
+    this.updateFlood();
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
     if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
+  }
+
+  /** 洪水の間、範囲内の施設と建物は稼働できない。 */
+  isFlooded(x: number, y: number): boolean {
+    return !this.devMode && !!this.flood && Math.hypot(x - this.flood.x, y - this.flood.y) <= FLOOD_RADIUS;
+  }
+
+  private updateFlood(): void {
+    if (!this.disastersEnabled || this.devMode) return;
+    if (this.flood) {
+      const age = this.day - this.flood.started;
+      if (age === 2) {
+        let damaged = false;
+        for (const c of [...this.zones.cells.values()]) {
+          if (c.building === 0 || c.part !== undefined) continue;
+          const ctr = lotCenter(c);
+          if (!this.isFlooded(ctr.x, ctr.y)) continue;
+          if ((c.x !== this.flood.x || c.y !== this.flood.y) && hash2(this.seed ^ this.flood.started, c.x, c.y) >= 0.25) continue;
+          this.zones.demolishLot(c);
+          c.building = 0; c.residents = 0; c.built = 0; c.aging = 1; c.w = 1; c.h = 1;
+          this.zones.version++; damaged = true;
+        }
+        if (damaged) { this.syncPeople(); this.refresh(); }
+      }
+      if (age >= FLOOD_DAYS) { this.flood = null; this.refresh(); }
+      return;
+    }
+    if (this.weather !== "rain" || hash2(this.seed ^ 0x6d98a32, this.day, 0) >= 1 / 180) return;
+    const candidates = [...this.zones.cells.values()].filter((c) => {
+      if (c.building === 0 || c.part !== undefined) return false;
+      for (let dy = -6; dy <= 6; dy += 3) for (let dx = -6; dx <= 6; dx += 3) {
+        if (tileAt(this.seed, c.x + dx, c.y + dy) === Tile.Water) return true;
+      }
+      return false;
+    });
+    if (!candidates.length) return;
+    const c = candidates[Math.floor(hash2(this.seed ^ 0x6d98a32, this.day, 1) * candidates.length)]!;
+    this.flood = { x: c.x, y: c.y, started: this.day };
+    this.refresh();
   }
 
   /** 200万円で発電施設をただちに修理する。 */
@@ -1079,6 +1140,7 @@ export class City {
     return cell.net > 0 && [...this.facilities.values()].some((f) => {
       if (f.type !== FacilityKind.Fire || this.facilityNet.get(f.id) !== cell.net) return false;
       const station = facilityCenter(f);
+      if (this.isFlooded(station.x, station.y)) return false;
       return Math.hypot(center.x - station.x, center.y - station.y) <= FACILITY_SPECS[FacilityKind.Fire].radius;
     });
   }

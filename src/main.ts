@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.6";
+const VERSION = "0.95.7";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -1849,9 +1849,11 @@ async function main() {
         dayTimer -= DAY_SEC;
         const hadFire = city.fire !== null;
         const hadOutage = city.outage !== null;
+        const hadFlood = city.flood !== null;
         city.tick();
         if (!hadFire && city.fire) emergencyAlert("火災が発生", `座標 ${city.fire.x}, ${city.fire.y} の建物で火災が発生しました。消防署の対応を確認してください。`);
         if (!hadOutage && city.outage) emergencyAlert("発電施設が故障", "発電が停止しています。メニューから修理するか、自動復旧をお待ちください。");
+        if (!hadFlood && city.flood) emergencyAlert("洪水が発生", `座標 ${city.flood.x}, ${city.flood.y} 付近が浸水しています。`);
         if (city.day - lastAutosaveDay >= AUTOSAVE_DAYS) {
           lastAutosaveDay = city.day;
           autosave();
