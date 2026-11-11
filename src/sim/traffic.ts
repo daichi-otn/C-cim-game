@@ -13,6 +13,12 @@ export const SHOP_TRIPS_PER_RESIDENT = 0.3;
 export const JAM_RATIO = 1;
 /** 経路を求め直す回数。混んだ道を避けて、少しずつ流れを割り振り直す。 */
 const ASSIGN_ITERATIONS = 4;
+/** 大きな街では、混雑を収束させる反復を減らして1回の再計算を軽くする。 */
+export function trafficIterationsFor(originCount: number, edgeCount: number): number {
+  if (originCount > 500 || edgeCount > 1600) return 2;
+  if (originCount > 250 || edgeCount > 800) return 3;
+  return ASSIGN_ITERATIONS;
+}
 /** 混雑で通りにくくなる度合い。距離に (1 + この値 × 混雑具合²) をかけた長さで経路を選ぶ。 */
 const CONGESTION_PENALTY = 1.5;
 
@@ -272,7 +278,8 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1, damag
 
   if (origins.length > 0) {
     const avg = new Float64Array(edgeIds.length);
-    for (let iter = 1; iter <= ASSIGN_ITERATIONS; iter++) {
+    const iterations = trafficIterationsFor(origins.length, edgeIds.length);
+    for (let iter = 1; iter <= iterations; iter++) {
       const cost = edgeLen.map((len, s) => (len / edgeSpeed[s]!) * (1 + CONGESTION_PENALTY * congestionOf(avg[s]!, edgeCap[s]!) ** 2));
       const next = new Float64Array(edgeIds.length);
       reached = 0;

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { City } from "../src/sim/city";
-import { EDGE_CAPACITY, SHOP_TRIPS_PER_RESIDENT, calcTraffic, congestionOf, trafficDemandPenalty } from "../src/sim/traffic";
+import { EDGE_CAPACITY, SHOP_TRIPS_PER_RESIDENT, calcTraffic, congestionOf, trafficDemandPenalty, trafficIterationsFor } from "../src/sim/traffic";
 import { WORKER_RATIO } from "../src/sim/demand";
 import { ZoneType } from "../src/sim/zoning";
 import { setup } from "./helpers";
@@ -10,6 +10,12 @@ const run = (city: City, days: number) => {
 };
 
 describe("交通量", () => {
+  it("街の規模に応じて経路探索の反復回数を抑える", () => {
+    expect(trafficIterationsFor(20, 100)).toBe(4);
+    expect(trafficIterationsFor(300, 100)).toBe(3);
+    expect(trafficIterationsFor(600, 100)).toBe(2);
+    expect(trafficIterationsFor(20, 2000)).toBe(2);
+  });
   it("住民がいなければ交通は発生しない", () => {
     const { city } = setup();
     city.refresh();
