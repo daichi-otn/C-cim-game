@@ -3,6 +3,7 @@ import type { Lighting } from "../render/lighting";
 import type { FacilityType } from "../sim/facilities";
 import { Scene3D } from "./scene3d";
 import { Effects3D } from "./effects3d";
+import { FireVehicle3D } from "./fireVehicle3d";
 import { StreetLights3D } from "./lights3d";
 import { Nature3D } from "./nature3d";
 import { Weather3D } from "./weather3d";
@@ -55,6 +56,7 @@ export class World3D {
     this.weather.setParticleScale(GRAPHICS_VALUES.weather[l.weather]!);
   }
   private traffic: Traffic3D | null = null;
+  private fireVehicle: FireVehicle3D | null = null;
   private signals: Signals3D | null = null;
   private overlays: Overlays3D | null = null;
   private effects: Effects3D | null = null;
@@ -120,6 +122,8 @@ export class World3D {
     if (this.districts) this.scene.scene.remove(this.districts.group);
     this.traffic?.dispose();
     if (this.traffic) this.scene.scene.remove(this.traffic.group);
+    this.fireVehicle?.dispose();
+    if (this.fireVehicle) this.scene.scene.remove(this.fireVehicle.group);
     this.signals?.dispose();
     if (this.signals) this.scene.scene.remove(this.signals.group);
     this.overlays?.dispose();
@@ -144,6 +148,8 @@ export class World3D {
     this.districts = new Districts3D(city);
     this.scene.scene.add(this.districts.group);
     this.traffic = new Traffic3D(city, this.roadView);
+    this.fireVehicle = new FireVehicle3D(city);
+    this.scene.scene.add(this.fireVehicle.group);
     this.traffic.showHeat = this.trafficHeat;
     this.signals = new Signals3D(city, this.roadView);
     this.scene.scene.add(this.signals.group);
@@ -236,6 +242,7 @@ export class World3D {
     this.structures?.setSnow(snow);
     this.traffic?.setHour(f.hour);
     this.traffic?.update(f.simDt, night);
+    this.fireVehicle?.update(f.simDt);
     this.signals?.update(this.traffic?.clock ?? 0);
     this.overlays?.update();
     this.streetLights?.update();

@@ -36,8 +36,9 @@ import {
 } from "./sim/save";
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
+import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.13";
+const VERSION = "0.95.14";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -961,10 +962,25 @@ async function main() {
     updateOutageMenu();
     updateDamageMenu();
     updateRoadDamageMenu();
+    updateProgressMenu();
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
     menuSeen = true;
+  }
+  function updateProgressMenu() {
+    if (!g) return;
+    const s = statisticsOf(g.city);
+    $("menu-statistics").textContent = `人口 ${s.population} 人 / 建物 ${s.buildings} 棟 / 道路 ${s.roads} 区間 / 施設 ${s.facilities} / 資金 ${yen(s.money)} 円 / 渋滞 ${s.jammedRoads} 区間 / 病気 ${s.sick} 人`;
+    $("menu-goal").textContent = nextGoalOf(s);
+    const box = $("menu-milestones");
+    box.textContent = "";
+    for (const m of milestonesOf(s)) {
+      const row = document.createElement("div");
+      row.style.cssText = "font-size:12px;color:" + (m.done ? "#7bd88f" : "#9aa5b1") + ";margin:2px 0";
+      row.textContent = `${m.done ? "✓" : "○"} ${m.name} — ${m.detail}`;
+      box.appendChild(row);
+    }
   }
   function updateLoanMenu() {
     if (!g) return;
@@ -1909,6 +1925,7 @@ async function main() {
       dayTimer = Math.min(dayTimer, DAY_SEC);
     }
     updatePanel(city);
+    if (!menuEl.classList.contains("hidden")) updateProgressMenu();
     updateTutorial(g);
     world.update(modalOpen() ? 0 : realDt, { simDt: modalOpen() ? 0 : realDt * speed, hour: dayClock.hour, lighting });
     // 音: 聞く人 (カメラの中心) の近くの車・建設・住民で、音の大きさと左右を決める
