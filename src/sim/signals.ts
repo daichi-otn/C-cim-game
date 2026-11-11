@@ -17,6 +17,18 @@ export type Light = "green" | "yellow" | "red";
 /** 交差点ごとに、そこにつながる道路がどの組 (0 = 東西, 1 = 南北) か。信号のない交差点は含めない。 */
 export type SignalPlan = Map<number, Map<number, number>>;
 
+/** 道路の接続数から交差点の種類を数える。信号は3方向以上、十字以上は4方向以上。 */
+export function intersectionStats(graph: RoadGraph): { t: number; cross: number; signal: number } {
+  let t = 0; let cross = 0; let signal = 0;
+  for (const node of graph.nodes.values()) {
+    const degree = graph.degree(node.id);
+    if (degree === 3) t++;
+    else if (degree >= 4) cross++;
+    if (degree >= 3) signal++;
+  }
+  return { t, cross, signal };
+}
+
 /** グラフから信号の計画を作る。道路が 3 本以上つながる交差点だけ。 */
 export function buildSignalPlan(graph: RoadGraph): SignalPlan {
   const plan: SignalPlan = new Map();

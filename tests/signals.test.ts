@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildSignalPlan, CYCLE_SEC, GREEN_SEC, lightOf, YELLOW_SEC } from "../src/sim/signals";
+import { buildSignalPlan, CYCLE_SEC, GREEN_SEC, intersectionStats, lightOf, YELLOW_SEC } from "../src/sim/signals";
 import { RoadGraph } from "../src/sim/roadGraph";
 import { RoadType } from "../src/sim/roadTypes";
 
@@ -13,6 +13,14 @@ function cross(): { graph: RoadGraph; center: number } {
 }
 
 describe("信号の計画", () => {
+  it("T字と十字の交差点を分類し、信号数を数える", () => {
+    const { graph } = cross();
+    graph.addRoad(5, 5, 5, 8, RoadType.Street);
+    const stats = intersectionStats(graph);
+    expect(stats.t).toBe(0);
+    expect(stats.cross).toBe(1);
+    expect(stats.signal).toBe(1);
+  });
   it("3 本以上つながる交差点には信号があり、東西と南北に組が分かれる", () => {
     const { graph, center } = cross();
     const plan = buildSignalPlan(graph);

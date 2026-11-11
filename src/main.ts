@@ -37,8 +37,9 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
+import { intersectionStats } from "./sim/signals";
 
-const VERSION = "0.95.28";
+const VERSION = "0.95.29";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -978,8 +979,9 @@ async function main() {
   function updateProgressMenu() {
     if (!g) return;
     const s = statisticsOf(g.city);
+    const intersections = intersectionStats(g.city.graph);
     const movingResidents = g.city.people.filter((person) => person.work).length;
-    $("menu-statistics").textContent = `人口 ${s.population} 人 / 建物 ${s.buildings} 棟 / 道路 ${s.roads} 区間 / 施設 ${s.facilities} / 資金 ${yen(s.money)} 円 / 渋滞 ${s.jammedRoads} 区間 / 病気 ${s.sick} 人 / 通勤中 ${movingResidents} 人`;
+    $("menu-statistics").textContent = `人口 ${s.population} 人 / 建物 ${s.buildings} 棟 / 道路 ${s.roads} 区間 / 交差点 T字${intersections.t}・十字${intersections.cross}・信号${intersections.signal} / 施設 ${s.facilities} / 資金 ${yen(s.money)} 円 / 渋滞 ${s.jammedRoads} 区間 / 病気 ${s.sick} 人 / 通勤中 ${movingResidents} 人`;
     const history = g.city.history;
     const points = history.length ? history.slice(-12) : [{ population: s.population, money: s.money, risk: s.environmentalRisk }];
     const maxPop = Math.max(1, ...points.map((p) => p.population));
