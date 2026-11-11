@@ -21,7 +21,7 @@ import {
   type Service,
 } from "./facilities";
 import { createStatefulRng, hash2, type StatefulRng } from "./rng";
-import { emergencyRoute } from "./emergencyRoute";
+import { emergencyRoute, type EmergencyStep } from "./emergencyRoute";
 import { Tile, tileAt } from "./terrain";
 import { RoadGraph, isAccessEdge, projectOnSegment, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
@@ -1258,14 +1258,29 @@ export class City {
 
   /** 同じ道路網につながる消防署だけが現場に対応できる。 */
   private fireStationFor(cell: ZoneCell): boolean {
+    return this.fireDispatch(cell) !== null;
+  }
+
+  /** 現場に到達できる消防署から、道路上の距離が最短の出動経路を選ぶ。 */
+  fireDispatch(cell: ZoneCell): { facilityId: number; route: EmergencyStep[]; distance: number } | null {
     const center = lotCenter(cell);
     const access = this.zones.lotCells(cell).map((t) => ({ x: t.x + 0.5, y: t.y + 0.5 })).sort((a, b) => this.graph.distanceToRoad(a.x, a.y, ZONE_REACH) - this.graph.distanceToRoad(b.x, b.y, ZONE_REACH))[0] ?? center;
-    return cell.net > 0 && [...this.facilities.values()].some((f) => {
-      if (f.type !== FacilityKind.Fire || this.facilityNet.get(f.id) !== cell.net) return false;
+    if (cell.net <= 0) return null;
+    let best: { facilityId: number; route: EmergencyStep[]; distance: number } | null = null;
+    for (const f of this.facilities.values()) {
+      if (f.type !== FacilityKind.Fire || this.facilityNet.get(f.id) !== cell.net) continue;
       const station = facilityCenter(f);
-      if (!this.facilityActive(f)) return false;
-      return Math.hypot(center.x - station.x, center.y - station.y) <= FACILITY_SPECS[FacilityKind.Fire].radius && emergencyRoute(this.graph, station, access) !== null;
-    });
+      if (!this.facilityActive(f) || Math.hypot(center.x - station.x, center.y - station.y) > FACILITY_SPECS[FacilityKind.Fire].radius) continue;
+      const route = emergencyRoute(this.graph, station, access);
+      if (!route) continue;
+      const distance = route.reduce((sum, step) => {
+        const edge = this.graph.edges.get(step.edge)!;
+        const a = this.graph.nodes.get(edge.a)!, b = this.graph.nodes.get(edge.b)!;
+        return sum + Math.hypot(a.x - b.x, a.y - b.y) * Math.abs(step.to - step.from);
+      }, 0);
+      if (!best || distance < best.distance) best = { facilityId: f.id, route, distance };
+    }
+    return best;
   }
 
   /** 火災は最長4日。消防が対応すれば2日で鎮火、対応がなければ建物が失われる。 */

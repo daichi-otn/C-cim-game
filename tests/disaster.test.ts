@@ -32,6 +32,10 @@ describe("火災", () => {
     const near = [...city.zones.cells.values()].find((c) => c.building > 0 && c.part === undefined && c.net > 0 && Math.hypot(c.x - (x0 + 2), c.y - (roadY - 1)) < 10)!;
     expect(near).toBeDefined();
     city.fire = { x: near.x, y: near.y, started: city.day };
+    const dispatch = city.fireDispatch(near);
+    expect(dispatch).not.toBeNull();
+    expect(dispatch!.route.length).toBeGreaterThan(0);
+    expect(city.facilities.get(dispatch!.facilityId)?.type).toBe(FacilityType.Fire);
     expect(city.notices().some((s) => s.includes("消防署が対応中"))).toBe(true);
     city.tick(); city.tick();
     expect(city.fire).toBeNull();
