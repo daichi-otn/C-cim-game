@@ -40,7 +40,7 @@ import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 import { applyLocale, loadLocale, text, LOCALE_STORAGE_KEY, type Locale } from "./i18n";
 
-const VERSION = "0.95.32";
+const VERSION = "0.95.33";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */

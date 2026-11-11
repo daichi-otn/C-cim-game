@@ -38,9 +38,9 @@ export const garbagePenaltyOf = (uncollected: number) => Math.min(1, Math.max(0,
 const reliefFalloff = (d: number, reach: number) => (d >= reach ? 0 : 1 - d / reach);
 
 /** 3 つの環境の悪さを、健康へのリスクにまとめる重み。 */
-const AIR_WEIGHT = 0.7;
-const NOISE_WEIGHT = 0.3;
-const ODOR_WEIGHT = 0.4;
+export const AIR_WEIGHT = 0.7;
+export const NOISE_WEIGHT = 0.3;
+export const ODOR_WEIGHT = 0.4;
 /** リスクが 1 のとき、住民の何割が寝込むか。病院の範囲内なら CARED_FACTOR 倍に減る。 */
 export const MAX_SICK_RATE = 0.6;
 export const CARED_FACTOR = 0.35;

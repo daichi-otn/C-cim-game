@@ -26,7 +26,7 @@ import { setTerrainEdits, Tile, tileAt, type TerrainEdit, type TerrainEditKind }
 import { RoadGraph, isAccessEdge, projectOnSegment, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
 import { costMultOf, planPath } from "./structures";
-import { GARBAGE_GRACE, MOVE_OUT_SICK_RATE, calcEnvironment, emptyHealth, garbagePenaltyOf, sickRateOf, type HealthStats } from "./environment";
+import { AIR_WEIGHT, GARBAGE_GRACE, MOVE_OUT_SICK_RATE, NOISE_WEIGHT, ODOR_WEIGHT, calcEnvironment, emptyHealth, garbagePenaltyOf, sickRateOf, type HealthStats } from "./environment";
 import { calcTraffic, emptyTraffic, trafficDemandPenalty, type TrafficResult } from "./traffic";
 import {
   AIR_POLLUTION_MULT,
@@ -303,6 +303,8 @@ export class City {
     return this.outsideNets.has(this.networkOfNode(nodeId));
   }
   private trafficKey = "";
+  /** 環境の汚染源配置が変わらない日は、距離計算を繰り返さない。 */
+  private environmentKey = "";
 
   constructor(readonly seed: number, graph = new RoadGraph(), rngState?: number) {
     this.graph = graph;
@@ -1209,7 +1211,15 @@ export class City {
       this.health = emptyHealth();
     } else {
       const activeFacilities = [...this.facilities.values()].filter((f) => this.facilityActive(f));
-      this.health = calcEnvironment(this.zones, this.graph, activeFacilities, this.traffic.flow, AIR_POLLUTION_MULT[this.weather], this.garbagePenalty);
+      const damageKey = `${this.outage?.started ?? ""}:${this.flood?.started ?? ""}:${this.quake?.started ?? ""}:${[...this.facilityDamage].join(",")}`;
+      const garbageKey = [...this.garbagePenalty].map(([net, p]) => `${net}:${p}`).join(",");
+      const environmentKey = `${this.graph.version}:${this.zones.version}:${this.facilitiesVersion}:${this.trafficVersion}:${this.weather}:${AIR_POLLUTION_MULT[this.weather]}:${damageKey}:${garbageKey}`;
+      if (environmentKey !== this.environmentKey) {
+        this.environmentKey = environmentKey;
+        this.health = calcEnvironment(this.zones, this.graph, activeFacilities, this.traffic.flow, AIR_POLLUTION_MULT[this.weather], this.garbagePenalty);
+      } else {
+        this.health = this.recountCachedHealth();
+      }
       this.happiness = Math.max(0, this.happiness - HEALTH_HAPPINESS_PENALTY * this.health.meanRisk);
       if (this.welfarePolicy && this.zones.totals().population > 0) this.happiness = Math.min(1, this.happiness + 0.1);
     }
@@ -1238,6 +1248,25 @@ export class City {
     const zoneOf = (z: ZoneType) => (z === ZoneType.Residential ? this.demand.r : z === ZoneType.Commercial ? this.demand.c : z === ZoneType.Office ? this.demand.o : this.demand.i);
     for (const [z, n] of counts) this.densityNeed.set(z, densityDemand(zoneOf(z), n));
     return spare;
+  }
+
+  /** 距離計算済みの環境リスクを使い、住民数だけを再集計する。 */
+  private recountCachedHealth(): HealthStats {
+    const stats = emptyHealth();
+    let homes = 0; let riskSum = 0;
+    for (const c of this.zones.cells.values()) {
+      if (c.zone !== ZoneType.Residential || c.building === 0 || c.residents <= 0) { c.env.sick = 0; continue; }
+      c.env.sick = c.residents * sickRateOf(c.env.risk, c.env.cared);
+      homes++;
+      riskSum += c.env.risk;
+      stats.sick += c.env.sick;
+      if (c.env.risk > 0.2) stats.homesAtRisk++;
+      stats.causes.air += AIR_WEIGHT * c.env.air;
+      stats.causes.noise += NOISE_WEIGHT * c.env.noise;
+      stats.causes.odor += ODOR_WEIGHT * c.env.odor;
+    }
+    stats.meanRisk = homes > 0 ? riskSum / homes : 0;
+    return stats;
   }
 
   /** 区画の種類と密度の需要 (-1〜1)。画面の表示にも使う。 */
