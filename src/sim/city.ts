@@ -47,6 +47,7 @@ import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACIT
 import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitMode, type TransitStop } from "./transit";
 import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
 import { PRIMARY_NAMES, PRIMARY_RESOURCE, primaryOutput, type PrimaryIndustry, type PrimaryIndustryType } from "./primaryIndustry";
+import { PARKING_CAPACITY, PARKING_COST, parkingUsed, type ParkingLot } from "./parking";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
 const MAX_LOT_SIDE = 6;
@@ -149,6 +150,7 @@ export interface CityData {
   ownedLand?: [number, number][];
   industries?: PrimaryIndustry[];
   history?: HistoryPoint[];
+  parkingLots?: ParkingLot[];
 }
 
 export interface GameDate {
@@ -274,6 +276,8 @@ export class City {
   readonly industries: PrimaryIndustry[] = [];
   private nextIndustryId = 1;
   readonly history: HistoryPoint[] = [];
+  readonly parkingLots: ParkingLot[] = [];
+  private nextParkingId = 1;
   private nextDistrictId = 1;
   /** 地区が変わるたびに増える (描画が作り直すかの判断用)。 */
   districtsVersion = 0;
@@ -336,6 +340,7 @@ export class City {
       ownedLand: [...this.ownedLand].map((key) => key.split(",").map(Number) as [number, number]),
       industries: this.industries.map((industry) => ({ ...industry })),
       history: this.history.map((point) => ({ ...point })),
+      parkingLots: this.parkingLots.map((lot) => ({ ...lot })),
     };
   }
 
@@ -403,6 +408,11 @@ export class City {
       city.history.push({ ...point });
     }
     if (city.history.length > 24) city.history.splice(0, city.history.length - 24);
+    for (const lot of d.parkingLots ?? []) {
+      if (!Number.isInteger(lot.id) || lot.id < 1 || !Number.isInteger(lot.x) || !Number.isInteger(lot.y) || !Number.isInteger(lot.capacity) || lot.capacity < 1 || !Number.isInteger(lot.used) || lot.used < 0 || lot.used > lot.capacity) throw new Error("駐車場のデータが不正です");
+      city.parkingLots.push({ ...lot });
+    }
+    city.nextParkingId = Math.max(1, ...city.parkingLots.map((lot) => lot.id + 1));
     // 建った日を持たない昔のデータの建物は、読み込んだ日に建ったものとする (いきなり建て替えの候補にしない)
     const builtDay = d.day;
     city.day = d.day;
@@ -527,6 +537,24 @@ export class City {
 
   transitStats(): { lines: number; stops: number; vehicles: number; ridership: number } {
     return { lines: this.transitLines.length, stops: this.transitStops.length, vehicles: this.transitLines.reduce((sum, line) => sum + line.vehicles, 0), ridership: this.transitLines.reduce((sum, line) => sum + line.ridership, 0) };
+  }
+
+  addParkingLot(): boolean {
+    const node = [...this.graph.nodes.values()][this.parkingLots.length % Math.max(1, this.graph.nodes.size)];
+    if (!node || !this.canAfford(PARKING_COST)) return false;
+    this.spend(PARKING_COST);
+    this.parkingLots.push({ id: this.nextParkingId++, x: Math.round(node.x), y: Math.round(node.y), capacity: PARKING_CAPACITY, used: 0 });
+    this.updateParking(); return true;
+  }
+
+  updateParking(): void {
+    const population = this.zones.totals().population;
+    const transit = this.transitStats().ridership;
+    for (const lot of this.parkingLots) lot.used = parkingUsed(population, transit, lot.capacity);
+  }
+
+  parkingStats(): { lots: number; capacity: number; used: number } {
+    return { lots: this.parkingLots.length, capacity: this.parkingLots.reduce((sum, lot) => sum + lot.capacity, 0), used: this.parkingLots.reduce((sum, lot) => sum + lot.used, 0) };
   }
 
   /** 地区を作る。囲んだ 2 点 (タイル) で範囲を決める。 */
@@ -905,6 +933,7 @@ export class City {
     }
     this.utilities = util;
     this.updateTransit();
+    this.updateParking();
     return spare;
   }
 

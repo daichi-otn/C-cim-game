@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.22";
+const VERSION = "0.95.23";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -964,6 +964,7 @@ async function main() {
     updateRoadDamageMenu();
     updateProgressMenu();
     updateTransitMenu();
+    updateParkingMenu();
     updateResourceMenu();
     const volume = $<HTMLInputElement>("menu-volume");
     volume.value = String(soundscape.volumeLevel);
@@ -1013,6 +1014,12 @@ async function main() {
       // 次の行は直前の行の後ろへ並べる
       anchor = row;
     }
+  }
+  function updateParkingMenu() {
+    if (!g) return;
+    const s = g.city.parkingStats();
+    $("menu-parking").textContent = `駐車場 ${s.lots} か所 / ${s.used} / ${s.capacity} 台使用（公共交通で需要を軽減）`;
+    ($("parking-add") as HTMLButtonElement).disabled = !g.city.canAfford(3_000_000);
   }
   function updateResourceMenu() {
     if (!g) return;
@@ -1101,6 +1108,11 @@ async function main() {
       else reportMenu("先に道路を1本以上建設してください", true);
     });
   }
+  $("parking-add").addEventListener("click", () => {
+    if (!g) return;
+    if (g.city.addParkingLot()) { updateParkingMenu(); reportMenu("駐車場を整備しました"); }
+    else reportMenu("道路がある街と300万円の資金が必要です", true);
+  });
   $("land-buy").addEventListener("click", () => {
     if (!g) return;
     const next = g.city.ownedLand.size * 16;

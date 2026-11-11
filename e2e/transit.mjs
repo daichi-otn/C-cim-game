@@ -10,5 +10,6 @@ check("停留所と車両を表示", (await page.textContent("#menu-transit"))?.
 await page.click("#menu-save-1");
 const save = await page.evaluate(() => JSON.parse(localStorage.getItem("ccim.save.1")));
 check("公共交通を保存", save.city.transit?.lines?.length === 1);
+check("駐車場を表示", (await page.textContent("#menu-parking"))?.includes("駐車場"));
 check("ブラウザエラーなし", errors.length === 0, errors.join(" / "));
 await finish(browser);
