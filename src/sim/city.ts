@@ -46,7 +46,7 @@ import { ageMixAt, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PEN
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
 import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitMode, type TransitStop } from "./transit";
 import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
-import { PRIMARY_NAMES, PRIMARY_RESOURCE, primaryOutput, type PrimaryIndustry, type PrimaryIndustryType } from "./primaryIndustry";
+import { PRIMARY_NAMES, PRIMARY_RESOURCE, industryFlow, primaryOutput, type PrimaryIndustry, type PrimaryIndustryType } from "./primaryIndustry";
 import { PARKING_CAPACITY, PARKING_COST, parkingUsed, type ParkingLot } from "./parking";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
@@ -523,7 +523,16 @@ export class City {
     return false;
   }
 
-  industryStats(): { count: number; output: number; names: string } { return { count: this.industries.length, output: this.industries.reduce((sum, i) => sum + i.output, 0), names: this.industries.map((i) => PRIMARY_NAMES[i.type]).join("・") }; }
+  industryStats(): { count: number; output: number; shipped: number; processed: number; names: string } {
+    let output = 0; let shipped = 0; let processed = 0;
+    for (const i of this.industries) {
+      output += i.output;
+      const edge = this.graph.nearestEdge(i.x + 0.5, i.y + 0.5, ZONE_REACH, isAccessEdge);
+      const flow = industryFlow(i.output, edge !== null && this.isOutsideNode(edge.a));
+      shipped += flow.shipped; processed += flow.processed;
+    }
+    return { count: this.industries.length, output, shipped, processed, names: this.industries.map((i) => PRIMARY_NAMES[i.type]).join("・") };
+  }
 
   /** 道路の両端から路線を作る。バスは道路上、鉄道・地下鉄は駅として同じ停留所モデルを使う。 */
   addTransitLine(mode: TransitMode = "bus"): boolean {
