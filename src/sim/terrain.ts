@@ -12,6 +12,18 @@ export const enum Tile {
   Mountain = 4,
 }
 
+export type TerrainEditKind = "level" | "water" | "forest";
+export interface TerrainEdit { x: number; y: number; kind: TerrainEditKind }
+const EDITS = new Map<number, Map<string, TerrainEditKind>>();
+
+/** 現在の街の地形編集を地形生成へ反映する (同時に表示する街は1つ)。 */
+export function setTerrainEdits(seed: number, edits: readonly TerrainEdit[]): void {
+  const map = new Map<string, TerrainEditKind>();
+  for (const edit of edits) map.set(`${edit.x},${edit.y}`, edit.kind);
+  EDITS.set(seed, map);
+}
+export function terrainEditAt(seed: number, tx: number, ty: number): TerrainEditKind | undefined { return EDITS.get(seed)?.get(`${Math.floor(tx)},${Math.floor(ty)}`); }
+
 export interface Chunk {
   cx: number;
   cy: number;
@@ -61,6 +73,9 @@ export function profileOf(seed: number): RegionProfile {
 /** タイル (tx,ty) の標高 (0..1)。 */
 export function heightAt(seed: number, tx: number, ty: number): number {
   const P = profileOf(seed);
+  const edit = terrainEditAt(seed, tx, ty);
+  if (edit === "water") return P.water - 0.05;
+  if (edit === "level") return P.sand + 0.04;
   const h = fbm(seed, tx * P.scale, ty * P.scale, 5);
   if (!P.coast) return h;
   // 実際の標高があれば、標高 1000 m で山の境目になるように、陸の高さを決める (細かな凹凸は noise で足す)
@@ -86,6 +101,10 @@ export function forestAt(seed: number, tx: number, ty: number): number {
 }
 
 export function tileAt(seed: number, tx: number, ty: number): Tile {
+  const edit = terrainEditAt(seed, tx, ty);
+  if (edit === "water") return Tile.Water;
+  if (edit === "level") return Tile.Grass;
+  if (edit === "forest") return Tile.Forest;
   const P = profileOf(seed);
   const h = heightAt(seed, tx, ty);
   if (h < P.water) return Tile.Water;

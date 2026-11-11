@@ -63,6 +63,7 @@ export class World3D {
   private policeVehicle: PoliceVehicle3D | null = null;
   private transitVehicle: TransitVehicle3D | null = null;
   private mobility: Mobility3D | null = null;
+  private terrainVersion = -1;
   private signals: Signals3D | null = null;
   private overlays: Overlays3D | null = null;
   private effects: Effects3D | null = null;
@@ -145,6 +146,7 @@ export class World3D {
     if (this.streetLights) this.scene.scene.remove(this.streetLights.group);
     this.city = city;
     this.terrain = new Terrain3D(city.seed);
+    this.terrainVersion = city.terrainVersion;
     this.scene.scene.add(this.terrain.group);
     this.roadView = new Roads3D(city.graph);
     this.scene.scene.add(this.roadView.group);
@@ -231,6 +233,11 @@ export class World3D {
     if (!this.terrain || !this.city) return;
     const v = this.view;
     const city = this.city;
+    if (city.terrainVersion !== this.terrainVersion) {
+      this.terrainVersion = city.terrainVersion;
+      this.terrain?.invalidate();
+      this.nature?.invalidate();
+    }
     const night = f.lighting.night;
     const pr = this.scene.renderer.getPixelRatio();
     const bounds = v.visibleBounds(160);

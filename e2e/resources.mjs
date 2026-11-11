@@ -8,5 +8,6 @@ await page.click("#land-buy");
 const after = await page.textContent("#menu-resources");
 check("資源統計を表示", before?.includes("農地") && before?.includes("石油"));
 check("土地購入で所有区画が増える", before !== after && after?.includes("所有区画 2"));
+check("地形編集ボタンを表示", await page.locator("#terrain-level").count() === 1 && await page.locator("#terrain-water").count() === 1 && await page.locator("#terrain-forest").count() === 1);
 check("ブラウザエラーなし", errors.length === 0, errors.join(" / "));
 await finish(browser);

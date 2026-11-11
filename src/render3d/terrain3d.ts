@@ -59,6 +59,8 @@ export class Terrain3D {
     return this.chunks.size;
   }
 
+  invalidate(): void { this.disposeChunks(); }
+
   /** 世界の可視範囲 (px) とズーム倍率から、必要なチャンクを作り、要らないものを捨てる。 */
   update(b: { x0: number; y0: number; x1: number; y1: number }, zoom: number): void {
     const res = resolutionFor(zoom);

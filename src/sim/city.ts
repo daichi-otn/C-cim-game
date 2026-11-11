@@ -22,7 +22,7 @@ import {
 } from "./facilities";
 import { createStatefulRng, hash2, type StatefulRng } from "./rng";
 import { emergencyRoute, type EmergencyStep } from "./emergencyRoute";
-import { Tile, tileAt } from "./terrain";
+import { setTerrainEdits, Tile, tileAt, type TerrainEdit, type TerrainEditKind } from "./terrain";
 import { RoadGraph, isAccessEdge, projectOnSegment, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
 import { costMultOf, planPath } from "./structures";
@@ -151,6 +151,7 @@ export interface CityData {
   industries?: PrimaryIndustry[];
   history?: HistoryPoint[];
   parkingLots?: ParkingLot[];
+  terrainEdits?: TerrainEdit[];
 }
 
 export interface GameDate {
@@ -278,6 +279,8 @@ export class City {
   readonly history: HistoryPoint[] = [];
   readonly parkingLots: ParkingLot[] = [];
   private nextParkingId = 1;
+  readonly terrainEdits: TerrainEdit[] = [];
+  terrainVersion = 0;
   private nextDistrictId = 1;
   /** 地区が変わるたびに増える (描画が作り直すかの判断用)。 */
   districtsVersion = 0;
@@ -309,6 +312,7 @@ export class City {
     this.zones = new ZoneMap(seed);
     this.rng = createStatefulRng(seed, rngState);
     this.zones.blocked = (x, y) => this.facilityAt(x, y) !== undefined;
+    setTerrainEdits(seed, []);
   }
 
   /** 保存用のデータにする。 */
@@ -341,6 +345,7 @@ export class City {
       industries: this.industries.map((industry) => ({ ...industry })),
       history: this.history.map((point) => ({ ...point })),
       parkingLots: this.parkingLots.map((lot) => ({ ...lot })),
+      terrainEdits: this.terrainEdits.map((edit) => ({ ...edit })),
     };
   }
 
@@ -413,6 +418,12 @@ export class City {
       city.parkingLots.push({ ...lot });
     }
     city.nextParkingId = Math.max(1, ...city.parkingLots.map((lot) => lot.id + 1));
+    for (const edit of d.terrainEdits ?? []) {
+      if (!Number.isInteger(edit.x) || !Number.isInteger(edit.y) || !["level", "water", "forest"].includes(edit.kind)) throw new Error("地形編集のデータが不正です");
+      city.terrainEdits.push({ ...edit });
+    }
+    setTerrainEdits(city.seed, city.terrainEdits);
+    city.terrainVersion++;
     // 建った日を持たない昔のデータの建物は、読み込んだ日に建ったものとする (いきなり建て替えの候補にしない)
     const builtDay = d.day;
     city.day = d.day;
@@ -480,6 +491,17 @@ export class City {
   }
 
   resourceStats(): Record<ResourceType, number> { return resourceSummary(this.seed, this.ownedLand); }
+
+  editTerrain(x: number, y: number, kind: TerrainEditKind): boolean {
+    const tx = Math.floor(x); const ty = Math.floor(y);
+    const px = Math.floor(tx / PARCEL_SIZE) * PARCEL_SIZE; const py = Math.floor(ty / PARCEL_SIZE) * PARCEL_SIZE;
+    if (!this.ownedLand.has(`${px},${py}`) || !this.canAfford(kind === "forest" ? 300_000 : 1_000_000)) return false;
+    const existing = this.terrainEdits.find((edit) => edit.x === tx && edit.y === ty);
+    if (existing) existing.kind = kind;
+    else this.terrainEdits.push({ x: tx, y: ty, kind });
+    this.spend(kind === "forest" ? 300_000 : 1_000_000);
+    setTerrainEdits(this.seed, this.terrainEdits); this.terrainVersion++; this.refresh(); return true;
+  }
 
   addIndustry(type: PrimaryIndustryType): boolean {
     if (!this.canAfford(5_000_000)) return false;

@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.24";
+const VERSION = "0.95.25";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -1028,6 +1028,9 @@ async function main() {
     const industry = g.city.industryStats();
     $("menu-industry").textContent = `一次産業 ${industry.count} / 生産 ${industry.output} / ${industry.names || "なし"}`;
     ($("land-buy") as HTMLButtonElement).disabled = !g.city.canAfford(10_000_000);
+    const hasMoney = g.city.canAfford(300_000);
+    for (const id of ["terrain-level", "terrain-water", "terrain-forest"]) ($<HTMLButtonElement>(id)).disabled = !hasMoney;
+    $("menu-terrain").textContent = `地形編集 ${g.city.terrainEdits.length} タイル / 画面中央 (${Math.floor(camera.x / TILE_PX)},${Math.floor(camera.y / TILE_PX)})`;
   }
   function updateLoanMenu() {
     if (!g) return;
@@ -1119,6 +1122,14 @@ async function main() {
     if (g.city.purchaseLand(next, 0)) { updateResourceMenu(); reportMenu("土地を購入しました"); }
     else reportMenu("この区画は購入済みか、資金が足りません", true);
   });
+  for (const [id, kind] of [["terrain-level", "level"], ["terrain-water", "water"], ["terrain-forest", "forest"]] as const) {
+    $(id).addEventListener("click", () => {
+      if (!g) return;
+      const tx = Math.floor(camera.x / TILE_PX); const ty = Math.floor(camera.y / TILE_PX);
+      if (g.city.editTerrain(tx, ty, kind)) { updateResourceMenu(); reportMenu(`${kind === "level" ? "整地" : kind === "water" ? "水路" : "植林"}しました`); }
+      else reportMenu("所有済み区画の中央付近と資金が必要です", true);
+    });
+  }
   for (const type of ["farm", "forestry", "mine", "oil"] as const) {
     $(`industry-${type}`).addEventListener("click", () => {
       if (!g) return;
