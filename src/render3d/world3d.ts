@@ -6,6 +6,7 @@ import { Effects3D } from "./effects3d";
 import { FireVehicle3D } from "./fireVehicle3d";
 import { PoliceVehicle3D } from "./policeVehicle3d";
 import { TransitVehicle3D } from "./transitVehicle3d";
+import { Mobility3D } from "./mobility3d";
 import { StreetLights3D } from "./lights3d";
 import { Nature3D } from "./nature3d";
 import { Weather3D } from "./weather3d";
@@ -61,6 +62,7 @@ export class World3D {
   private fireVehicle: FireVehicle3D | null = null;
   private policeVehicle: PoliceVehicle3D | null = null;
   private transitVehicle: TransitVehicle3D | null = null;
+  private mobility: Mobility3D | null = null;
   private signals: Signals3D | null = null;
   private overlays: Overlays3D | null = null;
   private effects: Effects3D | null = null;
@@ -129,6 +131,7 @@ export class World3D {
     this.fireVehicle?.dispose();
     this.policeVehicle?.dispose();
     this.transitVehicle?.dispose();
+    this.mobility?.dispose();
     if (this.fireVehicle) this.scene.scene.remove(this.fireVehicle.group);
     this.signals?.dispose();
     if (this.signals) this.scene.scene.remove(this.signals.group);
@@ -160,6 +163,8 @@ export class World3D {
     this.scene.scene.add(this.policeVehicle.group);
     this.transitVehicle = new TransitVehicle3D(city);
     this.scene.scene.add(this.transitVehicle.group);
+    this.mobility = new Mobility3D(city);
+    this.scene.scene.add(this.mobility.group);
     this.traffic.showHeat = this.trafficHeat;
     this.signals = new Signals3D(city, this.roadView);
     this.scene.scene.add(this.signals.group);
@@ -255,6 +260,7 @@ export class World3D {
     this.fireVehicle?.update(f.simDt);
     this.policeVehicle?.update(f.simDt);
     this.transitVehicle?.update(f.simDt);
+    this.mobility?.update(f.simDt);
     this.signals?.update(this.traffic?.clock ?? 0);
     this.overlays?.update();
     this.streetLights?.update();
