@@ -38,7 +38,7 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 
-const VERSION = "0.95.19";
+const VERSION = "0.95.20";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -977,6 +977,11 @@ async function main() {
     if (!g) return;
     const s = statisticsOf(g.city);
     $("menu-statistics").textContent = `人口 ${s.population} 人 / 建物 ${s.buildings} 棟 / 道路 ${s.roads} 区間 / 施設 ${s.facilities} / 資金 ${yen(s.money)} 円 / 渋滞 ${s.jammedRoads} 区間 / 病気 ${s.sick} 人`;
+    const history = g.city.history;
+    const points = history.length ? history.slice(-12) : [{ population: s.population, money: s.money, risk: s.environmentalRisk }];
+    const maxPop = Math.max(1, ...points.map((p) => p.population));
+    const maxMoney = Math.max(1, ...points.map((p) => Math.abs(p.money)));
+    $("menu-history").textContent = `人口  ${points.map((p) => "▉".repeat(Math.max(1, Math.round((p.population / maxPop) * 8))).padEnd(8, "·")).join(" ")}\n資金  ${points.map((p) => "▉".repeat(Math.max(1, Math.round((Math.max(0, p.money) / maxMoney) * 8))).padEnd(8, "·")).join(" ")}\n環境  ${points.map((p) => "▉".repeat(Math.max(0, Math.round((1 - Math.min(1, p.risk)) * 8))).padEnd(8, "·")).join(" ")}\n（左から古い月。人口・資金・環境リスク）`;
     $("menu-goal").textContent = nextGoalOf(s);
     const box = $("menu-milestones");
     box.textContent = "";

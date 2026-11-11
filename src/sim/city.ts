@@ -99,6 +99,17 @@ export interface MonthReport {
   expense: number;
 }
 
+export interface HistoryPoint {
+  day: number;
+  population: number;
+  money: number;
+  demandR: number;
+  demandC: number;
+  demandI: number;
+  demandO: number;
+  risk: number;
+}
+
 /** 街の保存用データ。 */
 export interface CityData {
   seed: number;
@@ -137,6 +148,7 @@ export interface CityData {
   /** 購入済み土地の左上 [x,y]。旧データでは中心区画だけを所有する。 */
   ownedLand?: [number, number][];
   industries?: PrimaryIndustry[];
+  history?: HistoryPoint[];
 }
 
 export interface GameDate {
@@ -261,6 +273,7 @@ export class City {
   readonly ownedLand = new Set<string>(["0,0"]);
   readonly industries: PrimaryIndustry[] = [];
   private nextIndustryId = 1;
+  readonly history: HistoryPoint[] = [];
   private nextDistrictId = 1;
   /** 地区が変わるたびに増える (描画が作り直すかの判断用)。 */
   districtsVersion = 0;
@@ -322,6 +335,7 @@ export class City {
       transit: { nextStopId: this.nextTransitStopId, nextLineId: this.nextTransitLineId, stops: this.transitStops.map((s) => ({ ...s })), lines: this.transitLines.map((l) => ({ ...l, stopIds: [...l.stopIds] })) },
       ownedLand: [...this.ownedLand].map((key) => key.split(",").map(Number) as [number, number]),
       industries: this.industries.map((industry) => ({ ...industry })),
+      history: this.history.map((point) => ({ ...point })),
     };
   }
 
@@ -384,6 +398,11 @@ export class City {
       city.industries.push({ ...industry });
     }
     city.nextIndustryId = Math.max(1, ...city.industries.map((industry) => industry.id + 1));
+    for (const point of d.history ?? []) {
+      if (!Number.isInteger(point.day) || point.day < 0 || !Number.isFinite(point.population) || !Number.isFinite(point.money) || ![point.demandR, point.demandC, point.demandI, point.demandO, point.risk].every(Number.isFinite)) throw new Error("統計履歴のデータが不正です");
+      city.history.push({ ...point });
+    }
+    if (city.history.length > 24) city.history.splice(0, city.history.length - 24);
     // 建った日を持たない昔のデータの建物は、読み込んだ日に建ったものとする (いきなり建て替えの候補にしない)
     const builtDay = d.day;
     city.day = d.day;
@@ -1209,7 +1228,12 @@ export class City {
     this.updateFacilityDamage();
     this.updateRoadDamage();
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
-    if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
+    if (this.day % DAYS_PER_MONTH === 0) {
+      this.closeMonth();
+      const t = this.zones.totals();
+      this.history.push({ day: this.day, population: t.population, money: this.money, demandR: this.demand.r, demandC: this.demand.c, demandI: this.demand.i, demandO: this.demand.o, risk: this.health.meanRisk });
+      if (this.history.length > 24) this.history.shift();
+    }
   }
 
   isQuakeArea(x: number, y: number): boolean {
