@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.8";
+const VERSION = "0.95.9";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -959,6 +959,7 @@ async function main() {
       : "内訳は次の月の決算後に表示されます。";
     updateLoanMenu();
     updateOutageMenu();
+    updateDamageMenu();
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
@@ -980,9 +981,32 @@ async function main() {
     $("menu-outage-detail").textContent = `${FACILITY_SPECS[f.type].name} (${f.x}, ${f.y}) が故障中。自動復旧まで ${Math.max(0, 7 - (city.day - city.outage.started))} 日。`;
     ($("repair-outage") as HTMLButtonElement).disabled = !city.canAfford(2_000_000);
   }
-  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) updateOutageMenu(); });
-  $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) updateLoanMenu(); });
-  $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) updateLoanMenu(); });
+  function updateDamageMenu() {
+    if (!g) return;
+    const city = g.city;
+    $("menu-damaged-facilities").classList.toggle("hidden", city.facilityDamage.size === 0);
+    const list = $("damaged-facilities-list");
+    list.textContent = "";
+    for (const [id, until] of city.facilityDamage) {
+      const f = city.facilities.get(id);
+      if (!f) continue;
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0";
+      const label = document.createElement("span");
+      label.textContent = `${FACILITY_SPECS[f.type].name} (${f.x}, ${f.y}) / 自動復旧まで ${Math.max(0, until - city.day)} 日`;
+      const button = document.createElement("button");
+      button.className = "btn"; button.textContent = "200万円で修理";
+      button.disabled = !city.canAfford(2_000_000);
+      button.addEventListener("click", () => {
+        if (!city.repairFacilityDamage(id)) return;
+        updateDamageMenu(); updateOutageMenu(); updateLoanMenu();
+      });
+      row.append(label, button); list.appendChild(row);
+    }
+  }
+  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) { updateOutageMenu(); updateDamageMenu(); updateLoanMenu(); } });
+  $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); } });
+  $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); } });
   $("policy-welfare").addEventListener("change", (event) => {
     if (!g) return;
     g.city.welfarePolicy = (event.target as HTMLInputElement).checked;

@@ -166,7 +166,7 @@ export class Overlays3D {
       sp.renderOrder = 12;
       void FACILITY_SPECS;
       this.badges.add(sp);
-      if (city.outage?.facilityId === f.id) {
+      if (city.outage?.facilityId === f.id || city.facilityDamage.has(f.id)) {
         const warning = new THREE.Sprite(new THREE.SpriteMaterial({ map: outageTexture(), depthTest: false, transparent: true }));
         warning.position.set(o.x, Math.max(facilityHeight(f) * 0.7, 6) + 18, o.z);
         warning.scale.set(10, 10, 1); warning.renderOrder = 13; this.badges.add(warning);
