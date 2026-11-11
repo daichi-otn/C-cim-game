@@ -87,6 +87,8 @@ export class RoadGraph {
   readonly edges = new Map<number, RoadEdge>();
   /** 変更のたびに増える。描画側が再描画の要否を判断するのに使う。 */
   version = 0;
+  /** 区間分割時に、元の区間と分割後の2区間のIDを通知する。 */
+  onEdgeSplit?: (oldId: number, newIds: readonly [number, number]) => void;
   /** 直近の addRoad の結果。 */
   lastChange: RoadChange = { built: [], changed: [] };
 
@@ -458,6 +460,7 @@ export class RoadGraph {
     this.deleteEdge(e);
     this.addEdgeRaw(e.a, n.id, e.type, e.oneWay, e.chain, e.structure, e.lanes);
     this.addEdgeRaw(n.id, e.b, e.type, e.oneWay, e.chain, e.structure, e.lanes);
+    this.onEdgeSplit?.(e.id, [this.edgeByPair.get(pairKey(e.a, n.id))!, this.edgeByPair.get(pairKey(n.id, e.b))!]);
   }
 
   private deleteEdge(e: RoadEdge): void {

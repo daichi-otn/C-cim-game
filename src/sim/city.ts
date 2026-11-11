@@ -266,6 +266,12 @@ export class City {
 
   constructor(readonly seed: number, graph = new RoadGraph(), rngState?: number) {
     this.graph = graph;
+    this.graph.onEdgeSplit = (oldId, newIds) => {
+      const until = this.roadDamage.get(oldId);
+      if (until === undefined) return;
+      this.roadDamage.delete(oldId);
+      for (const id of newIds) this.roadDamage.set(id, until);
+    };
     this.zones = new ZoneMap(seed);
     this.rng = createStatefulRng(seed, rngState);
     this.zones.blocked = (x, y) => this.facilityAt(x, y) !== undefined;

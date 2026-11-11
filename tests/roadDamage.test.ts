@@ -58,4 +58,27 @@ describe("道路の地震被害", () => {
     expect(city.roadDamage.size).toBe(0);
     expect(city.toData().roadDamage).toEqual([]);
   });
+
+  it("損傷した道路が交差点で分割されても、元の部分だけに損傷を引き継ぐ", () => {
+    const city = new City(12345); city.disastersEnabled = true;
+    city.graph.addRoad(0, 0, 12, 0);
+    const original = [...city.graph.edges.values()][0]!;
+    city.roadDamage.set(original.id, 8);
+    city.graph.addRoad(4, -4, 4, 4);
+    city.graph.addRoad(8, -4, 8, 4);
+    expect(city.roadDamage.size).toBe(3);
+    for (const [id, until] of city.roadDamage) {
+      const edge = city.graph.edges.get(id)!;
+      expect(until).toBe(8);
+      expect(city.graph.nodes.get(edge.a)!.y).toBe(0);
+      expect(city.graph.nodes.get(edge.b)!.y).toBe(0);
+    }
+    // 新しい交差道路には損傷を付けず、保存後も分割された区間が残る。
+    expect(city.graph.edges.size).toBeGreaterThan(city.roadDamage.size);
+    const loaded = City.fromData(city.toData());
+    expect([...loaded.roadDamage]).toEqual([...city.roadDamage]);
+    const id = [...city.roadDamage.keys()][0]!;
+    expect(city.repairRoadDamage(id)).toBe(true);
+    expect(city.roadDamage.size).toBe(2);
+  });
 });
