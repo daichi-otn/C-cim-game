@@ -22,7 +22,7 @@ import {
 } from "./facilities";
 import { createStatefulRng, hash2, type StatefulRng } from "./rng";
 import { Tile, tileAt } from "./terrain";
-import { RoadGraph, isAccessEdge, type RoadChange, type RoadGraphData } from "./roadGraph";
+import { RoadGraph, isAccessEdge, projectOnSegment, type RoadChange, type RoadGraphData } from "./roadGraph";
 import { DEFAULT_ROAD_TYPE, ROAD_SPECS, type RoadType } from "./roadTypes";
 import { costMultOf, planPath } from "./structures";
 import { GARBAGE_GRACE, MOVE_OUT_SICK_RATE, calcEnvironment, emptyHealth, garbagePenaltyOf, sickRateOf, type HealthStats } from "./environment";
@@ -113,6 +113,7 @@ export interface CityData {
   quake?: { x: number; y: number; started: number } | null;
   /** 地震で損傷した施設のIDと、自動復旧する日。 */
   facilityDamage?: [number, number][];
+  roadDamage?: [number, number][];
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -184,6 +185,7 @@ export class City {
   flood: { x: number; y: number; started: number } | null = null;
   quake: { x: number; y: number; started: number } | null = null;
   readonly facilityDamage = new Map<number, number>();
+  readonly roadDamage = new Map<number, number>();
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -284,6 +286,7 @@ export class City {
       flood: this.flood ? { ...this.flood } : null,
       quake: this.quake ? { ...this.quake } : null,
       facilityDamage: [...this.facilityDamage],
+      roadDamage: [...this.roadDamage].filter(([id]) => this.graph.edges.has(id)),
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -315,6 +318,11 @@ export class City {
       if (target && (!FACILITY_SPECS[target.type as FacilityType] || FACILITY_SPECS[target.type as FacilityType].service !== "power")) throw new Error("停電の対象が不正です");
     }
     const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState);
+    if (d.roadDamage !== undefined && (!Array.isArray(d.roadDamage) || (d.roadDamage.length > 0 && !d.disastersEnabled))) throw new Error("道路の被害データが不正です");
+    for (const item of d.roadDamage ?? []) {
+      if (!Array.isArray(item) || item.length !== 2 || !isInt(item[0], 1) || !isInt(item[1], 0, 1e12) || city.roadDamage.has(item[0]) || !city.graph.edges.has(item[0])) throw new Error("道路の被害データが不正です");
+      city.roadDamage.set(item[0], item[1]);
+    }
     for (const item of d.facilityDamage ?? []) {
       if (!Array.isArray(item) || item.length !== 2 || !isInt(item[0], 1) || !isInt(item[1], 0, 1e12) || city.facilityDamage.has(item[0]) || !d.facilities.some((f) => f.id === item[0])) throw new Error("施設の被害データが不正です");
       city.facilityDamage.set(item[0], item[1]);
@@ -622,6 +630,7 @@ export class City {
   syncRoads(): void {
     if (this.graph.version === this.checkedRoadVersion) return;
     this.checkedRoadVersion = this.graph.version;
+    for (const id of this.roadDamage.keys()) if (!this.graph.edges.has(id)) this.roadDamage.delete(id);
     for (const f of [...this.facilities.values()]) {
       const underRoad = footprint(f.x, f.y, f.size).some((t) => this.graph.distanceToRoad(t.x + 0.5, t.y + 0.5, ROAD_CLEARANCE) < ROAD_CLEARANCE);
       if (underRoad) this.removeFacility(f.id);
@@ -896,6 +905,7 @@ export class City {
     if (this.flood) out.push(`洪水が発生しています (${this.flood.x}, ${this.flood.y} 付近)。浸水はあと ${Math.max(0, FLOOD_DAYS - (this.day - this.flood.started))} 日で引く見込みです`);
     if (this.quake) out.push(`地震が発生しました (${this.quake.x}, ${this.quake.y} 付近)。余震のため周辺の建設を見合わせています`);
     if (this.facilityDamage.size) out.push(`地震で ${this.facilityDamage.size} 施設が損傷しています。メニューで修理できます`);
+    if (this.roadDamage.size) out.push(`地震で ${this.roadDamage.size} 道路区間が損傷しています。通行容量が減っています`);
     const hasZones = this.zones.cells.size > 0;
     for (const k of SERVICES) {
       const u = this.utilities[k];
@@ -939,10 +949,10 @@ export class City {
   /** 道路・建物・人口が変わっていたら、交通量を求め直す。変化がなければ何もしない。 */
   private syncTraffic(population: number): void {
     const capMult = ROAD_CAPACITY_MULT[this.weather];
-    const key = `${this.graph.version}:${this.zones.version}:${population}:${this.facilitiesVersion}:${capMult}`;
+    const key = `${this.graph.version}:${this.zones.version}:${population}:${this.facilitiesVersion}:${capMult}:${this.devMode}:${[...this.roadDamage.keys()].join(",")}`;
     if (key === this.trafficKey) return;
     this.trafficKey = key;
-    this.traffic = calcTraffic(this.graph, this.zones, capMult);
+    this.traffic = calcTraffic(this.graph, this.zones, capMult, this.devMode ? new Map() : this.roadDamage);
     this.trafficVersion++;
   }
 
@@ -1083,6 +1093,7 @@ export class City {
     this.updateFlood();
     this.updateQuake();
     this.updateFacilityDamage();
+    this.updateRoadDamage();
     this.calcAging(); // 日付が進んだので、建物の老朽化も今日の値にそろえる (保存と読み込みで同じになるように)
     if (this.day % DAYS_PER_MONTH === 0) this.closeMonth();
   }
@@ -1116,6 +1127,23 @@ export class City {
     if (changed) { this.facilitiesVersion++; this.refresh(); }
   }
 
+  /** 道路区間を100万円で即時修理する。 */
+  repairRoadDamage(id: number): boolean {
+    if (!this.graph.edges.has(id) || !this.roadDamage.has(id) || !this.canAfford(1_000_000)) return false;
+    this.spend(1_000_000);
+    this.roadDamage.delete(id);
+    this.refresh();
+    return true;
+  }
+
+  private updateRoadDamage(): void {
+    let changed = false;
+    for (const [id, until] of this.roadDamage) {
+      if (this.day >= until || !this.graph.edges.has(id)) { this.roadDamage.delete(id); changed = true; }
+    }
+    if (changed) this.refresh();
+  }
+
   /** 地震は建物に被害を与え、余震が収まれば空き区画から再建する。 */
   private updateQuake(): void {
     if (!this.disastersEnabled || this.devMode) return;
@@ -1137,6 +1165,11 @@ export class City {
           if (!this.isQuakeArea(ctr.x, ctr.y) || hash2(this.seed ^ this.quake.started ^ 0x7c21, f.id, 0) >= 0.35) continue;
           this.facilityDamage.set(f.id, this.day + 10);
           this.facilitiesVersion++; damaged = true;
+        }
+        for (const e of this.graph.edges.values()) {
+          const a = this.graph.nodes.get(e.a)!, b = this.graph.nodes.get(e.b)!;
+          if (projectOnSegment(this.quake.x, this.quake.y, a.x, a.y, b.x, b.y).dist > QUAKE_RADIUS || hash2(this.seed ^ this.quake.started ^ 0x329d, e.id, 0) >= 0.35) continue;
+          this.roadDamage.set(e.id, this.day + 8); damaged = true;
         }
         if (damaged) { this.syncPeople(); this.refresh(); }
       }

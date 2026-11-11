@@ -2,7 +2,7 @@ import * as THREE from "three";
 import type { City } from "../sim/city";
 import { hash2 } from "../sim/rng";
 import { ROAD_SPECS } from "../sim/roadTypes";
-import { edgeCongestion } from "../sim/traffic";
+import { DAMAGED_ROAD_CAPACITY, DAMAGED_ROAD_SPEED, edgeCongestion } from "../sim/traffic";
 import type { RoadGraph } from "../sim/roadGraph";
 import { GeoBuilder } from "./geo";
 import { aheadGap, CAR, CAR_LEN, driverOf, idmAccel, lanePoint, nearestSegment, overlapsInLane, stepSpeed, stopSpeed, turnToward, wrapAngle, yieldsTo } from "./carMotion";
@@ -408,8 +408,9 @@ export class Traffic3D {
     const b = graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y) || 1;
     car.stall = car.speed < 0.02 ? car.stall + dt : 0;
-    const ratio = edgeCongestion(graph, car.edge, this.city.traffic.flow.get(car.edge) ?? 0, this.city.traffic.capMult);
-    let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
+    const damage = !this.city.devMode && this.city.roadDamage.has(car.edge);
+    const ratio = edgeCongestion(graph, car.edge, this.city.traffic.flow.get(car.edge) ?? 0, this.city.traffic.capMult * (damage ? DAMAGED_ROAD_CAPACITY : 1));
+    let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * (damage ? DAMAGED_ROAD_SPEED : 1) * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
     const distToEnd = (car.dir > 0 ? 1 - car.p : car.p) * len;
     // 道順がない車が、端のすぐ手前で止まり続けないように、端に着いたことにする (行き先か、U ターンか、を決める)
     if (car.route.length === 0 && distToEnd <= 0.05) {
@@ -866,7 +867,7 @@ export class Traffic3D {
       if (!flow) continue;
       const a = city.graph.nodes.get(e.a)!;
       const b = city.graph.nodes.get(e.b)!;
-      const color = congestionColor(edgeCongestion(city.graph, e.id, flow, city.traffic.capMult));
+      const color = congestionColor(edgeCongestion(city.graph, e.id, flow, city.traffic.capMult * (!city.devMode && city.roadDamage.has(e.id) ? DAMAGED_ROAD_CAPACITY : 1)));
       g.strip(a.x * TILE, a.y * TILE, b.x * TILE, b.y * TILE, TILE * 0.5, 1.0, color);
     }
     const geo = g.build();

@@ -1,0 +1,30 @@
+// 損傷した道路の読み込みと修理を確認する。
+import { buildBase, launch, makeChecker } from "./lib.mjs";
+const { browser, page, errors } = await launch(process.argv[2]);
+const { check, finish } = makeChecker();
+await page.click("#speed button[data-speed='0']");
+await buildBase(page);
+await page.click("#menu-button");
+await page.click("#menu-save-1");
+const ok = await page.evaluate(() => {
+  const data = JSON.parse(localStorage.getItem("ccim.save.1"));
+  const edge = data.city.graph.edges[0];
+  if (!edge) return false;
+  data.city.disastersEnabled = true;
+  data.city.roadDamage = [[edge[0], data.city.day + 8]];
+  localStorage.setItem("ccim.save.1", JSON.stringify(data));
+  return true;
+});
+check("道路の損傷を用意", ok);
+await page.click("#menu-title"); await page.click("#title-load-1");
+await page.setViewportSize({ width: 375, height: 812 });
+await page.click("#menu-button");
+check("スマホ幅で損傷道路を表示", await page.locator("#menu-damaged-roads").isVisible());
+check("残り日数を表示", (await page.textContent("#damaged-roads-list")).includes("8 日"));
+await page.locator("#damaged-roads-list button").click();
+check("修理後は一覧が消える", !(await page.locator("#menu-damaged-roads").isVisible()));
+await page.click("#menu-save-1");
+const save = await page.evaluate(() => JSON.parse(localStorage.getItem("ccim.save.1")));
+check("修理結果を保存", save.city.roadDamage.length === 0);
+check("ブラウザエラーなし", errors.length === 0, errors.join(" / "));
+await finish(browser);

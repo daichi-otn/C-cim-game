@@ -5,6 +5,8 @@ import { ZONE_REACH, ZoneType, cellCapacity, type ZoneCell, type ZoneMap } from 
 
 /** 標準の道路 (通り) が 1 日にさばける車の数。これを超えると混む。道路の種類ごとの容量は roadTypes にある。 */
 export const EDGE_CAPACITY = ROAD_SPECS[RoadType.Street].capacity;
+export const DAMAGED_ROAD_CAPACITY = 0.25;
+export const DAMAGED_ROAD_SPEED = 0.5;
 /** 住民 1 人が 1 日に買い物へ出る回数 (商業の雇用が行き先)。通勤は WORKER_RATIO (住民の 6 割が働き、商業と工業が行き先)。 */
 export const SHOP_TRIPS_PER_RESIDENT = 0.3;
 /** 混雑具合 (流量 / 容量) がこの値を超えた区間は「渋滞」。 */
@@ -137,7 +139,7 @@ function accessPoint(graph: RoadGraph, x: number, y: number): { key: string; edg
  * 建物が道路の途中に面しているときは、そこで道路の区間を分けて、出入りする場所にする。
  * capMult: 天気による道路の容量の倍率 (雨・雪で下がる)。
  */
-export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1): TrafficResult {
+export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1, damaged: ReadonlyMap<number, number> = new Map()): TrafficResult {
   // 建物の出入口を集める
   interface Site {
     key: string;
@@ -196,8 +198,8 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1): Traf
       const slot = edgeIds.length;
       edgeIds.push(e.id);
       edgeLen.push(stops[k + 1]!.pos - stops[k]!.pos);
-      edgeCap.push(roadCapacity(e.type, e.oneWay !== 0, e.lanes) * capMult);
-      edgeSpeed.push(roadSpeed(e.type, e.oneWay !== 0));
+      edgeCap.push(roadCapacity(e.type, e.oneWay !== 0, e.lanes) * capMult * (damaged.has(e.id) ? DAMAGED_ROAD_CAPACITY : 1));
+      edgeSpeed.push(roadSpeed(e.type, e.oneWay !== 0) * (damaged.has(e.id) ? DAMAGED_ROAD_SPEED : 1));
       // 一方通行は、決まった向きにだけ進める (a → b なら、道路の始端から終端へ)
       if (e.oneWay !== -1) (adj[from] ??= []).push({ edge: slot, to });
       if (e.oneWay !== 1) (adj[to] ??= []).push({ edge: slot, to: from });
@@ -295,7 +297,7 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1): Traf
     weighted += congestionOf(f, edgeCap[s]!) * f * edgeLen[s]!;
     weight += f * edgeLen[s]!;
   }
-  for (const [id, f] of result.flow) if (edgeCongestion(graph, id, f, capMult) > JAM_RATIO) result.jammed++;
+  for (const [id, f] of result.flow) if (edgeCongestion(graph, id, f, capMult * (damaged.has(id) ? DAMAGED_ROAD_CAPACITY : 1)) > JAM_RATIO) result.jammed++;
   result.avgCongestion = weight > 0 ? weighted / weight : 0;
   return result;
 }

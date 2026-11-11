@@ -37,7 +37,7 @@ import {
 import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 
-const VERSION = "0.95.9";
+const VERSION = "0.95.10";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -960,6 +960,7 @@ async function main() {
     updateLoanMenu();
     updateOutageMenu();
     updateDamageMenu();
+    updateRoadDamageMenu();
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
@@ -999,14 +1000,34 @@ async function main() {
       button.disabled = !city.canAfford(2_000_000);
       button.addEventListener("click", () => {
         if (!city.repairFacilityDamage(id)) return;
-        updateDamageMenu(); updateOutageMenu(); updateLoanMenu();
+        updateDamageMenu(); updateOutageMenu(); updateLoanMenu(); updateRoadDamageMenu();
       });
       row.append(label, button); list.appendChild(row);
     }
   }
-  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) { updateOutageMenu(); updateDamageMenu(); updateLoanMenu(); } });
-  $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); } });
-  $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); } });
+  function updateRoadDamageMenu() {
+    if (!g) return;
+    const city = g.city;
+    $("menu-damaged-roads").classList.toggle("hidden", city.roadDamage.size === 0);
+    const list = $("damaged-roads-list"); list.textContent = "";
+    for (const [id, until] of city.roadDamage) {
+      const e = city.graph.edges.get(id); if (!e) continue;
+      const a = city.graph.nodes.get(e.a)!, b = city.graph.nodes.get(e.b)!;
+      const row = document.createElement("div"); row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0";
+      const label = document.createElement("span");
+      label.textContent = `${ROAD_SPECS[e.type].name} (${a.x.toFixed(1)}, ${a.y.toFixed(1)})〜(${b.x.toFixed(1)}, ${b.y.toFixed(1)}) / 自動復旧まで ${Math.max(0, until - city.day)} 日`;
+      const button = document.createElement("button"); button.className = "btn"; button.textContent = "100万円で修理";
+      button.disabled = !city.canAfford(1_000_000);
+      button.addEventListener("click", () => {
+        if (!city.repairRoadDamage(id)) return;
+        updateRoadDamageMenu(); updateDamageMenu(); updateOutageMenu(); updateLoanMenu();
+      });
+      row.append(label, button); list.appendChild(row);
+    }
+  }
+  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) { updateOutageMenu(); updateDamageMenu(); updateLoanMenu(); updateRoadDamageMenu(); } });
+  $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); updateRoadDamageMenu(); } });
+  $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); updateRoadDamageMenu(); } });
   $("policy-welfare").addEventListener("change", (event) => {
     if (!g) return;
     g.city.welfarePolicy = (event.target as HTMLInputElement).checked;

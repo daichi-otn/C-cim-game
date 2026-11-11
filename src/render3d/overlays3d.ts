@@ -174,6 +174,11 @@ export class Overlays3D {
     }
     // 環境の色分けと、病人マーク
     const g = new GeoBuilder();
+    for (const id of city.roadDamage.keys()) {
+      const e = city.graph.edges.get(id); if (!e) continue;
+      const a = city.graph.nodes.get(e.a)!, b = city.graph.nodes.get(e.b)!;
+      g.strip(a.x * TILE, a.y * TILE, b.x * TILE, b.y * TILE, TILE * 0.5, 1.3, 0xe47725);
+    }
     if (city.quake) {
       const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: quakeTexture(), depthTest: false, transparent: true }));
       sp.position.set((city.quake.x + 0.5) * TILE, 30, (city.quake.y + 0.5) * TILE);
