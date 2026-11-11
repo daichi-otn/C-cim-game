@@ -121,6 +121,8 @@ export interface CityData {
   loanBalance?: number;
   /** 暮らしの支援条例。旧データでは無効。 */
   welfarePolicy?: boolean;
+  /** 災害対策条例。旧データでは無効。 */
+  disasterPreparedness?: boolean;
   /** 災害の設定と進行中の火災。昔のデータでは災害なし。 */
   disastersEnabled?: boolean;
   fire?: { x: number; y: number; started: number } | null;
@@ -203,6 +205,7 @@ export class City {
   money = START_MONEY;
   loanBalance = 0;
   welfarePolicy = false;
+  disasterPreparedness = false;
   disastersEnabled = false;
   fire: { x: number; y: number; started: number } | null = null;
   outage: { facilityId: number; started: number } | null = null;
@@ -223,7 +226,7 @@ export class City {
   /** 直近 1 か月の収支。まだ月が終わっていなければ 0。 */
   lastMonth: MonthReport = { income: 0, expense: 0 };
   /** 今回の実行中に締めた月の内訳。古いセーブには内訳がない。 */
-  lastBudget: { roads: number; pensions: number; facilities: number; interest: number; welfare: number } | null = null;
+  lastBudget: { roads: number; pensions: number; facilities: number; interest: number; welfare: number; disasterPreparedness: number } | null = null;
   /** 地価 (0〜1) の、区画ごとの値 (キーは "x,y")。道路・サービス・環境・施設から毎日求め直す。保存しない。 */
   landValues = new Map<string, number>();
   /** 建物が建っている場所の地価の平均から決まる、税の上乗せの割合 (0〜LAND_TAX_BONUS)。保存しない。 */
@@ -324,6 +327,7 @@ export class City {
       taxRate: this._taxRate,
       loanBalance: this.loanBalance,
       welfarePolicy: this.welfarePolicy,
+      disasterPreparedness: this.disasterPreparedness,
       disastersEnabled: this.disastersEnabled,
       fire: this.fire ? { ...this.fire } : null,
       outage: this.outage ? { ...this.outage } : null,
@@ -355,6 +359,7 @@ export class City {
     if (!isInt(d.seed, 0) || !isInt(d.day, 0) || !Number.isFinite(d.money) || !Number.isFinite(d.taxRate)) throw new Error("街の基本情報が不正です");
     if (d.loanBalance !== undefined && !isInt(d.loanBalance, 0, 1000000000)) throw new Error("融資の残高が不正です");
     if (d.welfarePolicy !== undefined && typeof d.welfarePolicy !== "boolean") throw new Error("条例の設定が不正です");
+    if (d.disasterPreparedness !== undefined && typeof d.disasterPreparedness !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");
     if (d.fire != null && (typeof d.fire !== "object" || !isInt(d.fire.x, -1e9, 1e9) || !isInt(d.fire.y, -1e9, 1e9) || !isInt(d.fire.started, 0, d.day) || !d.disastersEnabled)) throw new Error("火災のデータが不正です");
     if (d.outage != null && (typeof d.outage !== "object" || !isInt(d.outage.facilityId, 1) || !isInt(d.outage.started, 0, d.day) || !d.disastersEnabled)) throw new Error("停電のデータが不正です");
@@ -430,6 +435,7 @@ export class City {
     city.money = d.money;
     city.loanBalance = d.loanBalance ?? 0;
     city.welfarePolicy = d.welfarePolicy ?? false;
+    city.disasterPreparedness = d.disasterPreparedness ?? false;
     city.disastersEnabled = d.disastersEnabled ?? false;
     city.fire = d.fire ? { ...d.fire } : null;
     city.outage = d.outage ? { ...d.outage } : null;
@@ -1349,21 +1355,21 @@ export class City {
           if (c.building === 0 || c.part !== undefined) continue;
           const ctr = lotCenter(c);
           if (!this.isQuakeArea(ctr.x, ctr.y)) continue;
-          if ((c.x !== this.quake.x || c.y !== this.quake.y) && hash2(this.seed ^ this.quake.started ^ 0x3a42, c.x, c.y) >= 0.3) continue;
+          if ((c.x !== this.quake.x || c.y !== this.quake.y) && hash2(this.seed ^ this.quake.started ^ 0x3a42, c.x, c.y) >= (this.disasterPreparedness ? 0.2 : 0.3)) continue;
           this.zones.demolishLot(c);
           c.building = 0; c.residents = 0; c.built = 0; c.aging = 1; c.w = 1; c.h = 1;
           this.zones.version++; damaged = true;
         }
         for (const f of this.facilities.values()) {
           const ctr = facilityCenter(f);
-          if (!this.isQuakeArea(ctr.x, ctr.y) || hash2(this.seed ^ this.quake.started ^ 0x7c21, f.id, 0) >= 0.35) continue;
-          this.facilityDamage.set(f.id, this.day + 10);
+          if (!this.isQuakeArea(ctr.x, ctr.y) || hash2(this.seed ^ this.quake.started ^ 0x7c21, f.id, 0) >= (this.disasterPreparedness ? 0.23 : 0.35)) continue;
+          this.facilityDamage.set(f.id, this.day + (this.disasterPreparedness ? 6 : 10));
           this.facilitiesVersion++; damaged = true;
         }
         for (const e of this.graph.edges.values()) {
           const a = this.graph.nodes.get(e.a)!, b = this.graph.nodes.get(e.b)!;
-          if (projectOnSegment(this.quake.x, this.quake.y, a.x, a.y, b.x, b.y).dist > QUAKE_RADIUS || hash2(this.seed ^ this.quake.started ^ 0x329d, e.id, 0) >= 0.35) continue;
-          this.roadDamage.set(e.id, this.day + 8); damaged = true;
+          if (projectOnSegment(this.quake.x, this.quake.y, a.x, a.y, b.x, b.y).dist > QUAKE_RADIUS || hash2(this.seed ^ this.quake.started ^ 0x329d, e.id, 0) >= (this.disasterPreparedness ? 0.23 : 0.35)) continue;
+          this.roadDamage.set(e.id, this.day + (this.disasterPreparedness ? 5 : 8)); damaged = true;
         }
         if (damaged) { this.syncPeople(); this.refresh(); }
       }
@@ -1392,7 +1398,7 @@ export class City {
           if (c.building === 0 || c.part !== undefined) continue;
           const ctr = lotCenter(c);
           if (!this.isFlooded(ctr.x, ctr.y)) continue;
-          if ((c.x !== this.flood.x || c.y !== this.flood.y) && hash2(this.seed ^ this.flood.started, c.x, c.y) >= 0.25) continue;
+          if ((c.x !== this.flood.x || c.y !== this.flood.y) && hash2(this.seed ^ this.flood.started, c.x, c.y) >= (this.disasterPreparedness ? 0.15 : 0.25)) continue;
           this.zones.demolishLot(c);
           c.building = 0; c.residents = 0; c.built = 0; c.aging = 1; c.w = 1; c.h = 1;
           this.zones.version++; damaged = true;
@@ -1429,7 +1435,7 @@ export class City {
   private updateOutage(): void {
     if (!this.disastersEnabled || this.devMode) return;
     if (this.outage) {
-      if (!this.facilities.has(this.outage.facilityId) || this.day - this.outage.started >= 7) {
+      if (!this.facilities.has(this.outage.facilityId) || this.day - this.outage.started >= (this.disasterPreparedness ? 5 : 7)) {
         this.outage = null;
         this.refresh();
       }
@@ -1477,7 +1483,7 @@ export class City {
       const c = this.zones.get(this.fire.x, this.fire.y);
       if (!c || c.building === 0 || c.part !== undefined) { this.fire = null; return; }
       const age = this.day - this.fire.started;
-      if (age >= 2 && this.fireStationFor(c)) { this.fire = null; return; }
+      if (age >= (this.disasterPreparedness ? 1 : 2) && this.fireStationFor(c)) { this.fire = null; return; }
       if (age >= 4) {
         this.zones.demolishLot(c);
         c.building = 0; c.residents = 0; c.built = 0; c.aging = 1; c.w = 1; c.h = 1;
@@ -1535,9 +1541,10 @@ export class City {
     }
     const interest = Math.round(this.loanBalance * 0.01);
     const welfare = this.welfarePolicy ? Math.round(this.zones.totals().population * 1000) : 0;
-    const expense = roads + pensions + facilities + interest + welfare;
+    const disasterPreparedness = this.disasterPreparedness ? Math.round(this.zones.totals().population * 500) : 0;
+    const expense = roads + pensions + facilities + interest + welfare + disasterPreparedness;
     if (!this.devMode) this.money += income - expense; // 開発者モードでは、収支はお金に影響しない (収支の表示だけ更新する)
     this.lastMonth = { income, expense };
-    this.lastBudget = { roads, pensions, facilities, interest, welfare };
+    this.lastBudget = { roads, pensions, facilities, interest, welfare, disasterPreparedness };
   }
 }

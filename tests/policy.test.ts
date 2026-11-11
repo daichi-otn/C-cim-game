@@ -25,4 +25,17 @@ describe("暮らしの支援条例", () => {
     expect(City.fromData(data).welfarePolicy).toBe(false);
     expect(() => City.fromData({ ...data, welfarePolicy: 1 as unknown as boolean })).toThrow();
   });
+
+  it("災害対策条例を保存し、月額費用を計上する", () => {
+    const { city } = setup();
+    for (let i = 0; i < 90; i++) city.tick();
+    city.disasterPreparedness = true;
+    while ((city.day + 1) % DAYS_PER_MONTH !== 0) city.tick();
+    city.tick();
+    expect(city.lastBudget?.disasterPreparedness).toBe(Math.round(city.zones.totals().population * 500));
+    expect(city.lastMonth.expense).toBeGreaterThanOrEqual(city.lastBudget!.disasterPreparedness);
+    expect(City.fromData(city.toData()).disasterPreparedness).toBe(true);
+    const data = city.toData();
+    expect(() => City.fromData({ ...data, disasterPreparedness: 1 as unknown as boolean })).toThrow();
+  });
 });

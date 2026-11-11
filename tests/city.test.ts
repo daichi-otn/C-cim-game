@@ -95,7 +95,7 @@ describe("City: 月末の収支", () => {
     expect(city.money).toBe(money); // 月末前は変わらない
     city.tick();
     expect(city.lastMonth).toEqual({ income: 0, expense: Math.round(length * ROAD_UPKEEP_PER_TILE) });
-    expect(city.lastBudget).toEqual({ roads: Math.round(length * ROAD_UPKEEP_PER_TILE), pensions: 0, facilities: 0, interest: 0, welfare: 0 });
+    expect(city.lastBudget).toEqual({ roads: Math.round(length * ROAD_UPKEEP_PER_TILE), pensions: 0, facilities: 0, interest: 0, welfare: 0, disasterPreparedness: 0 });
     expect(city.money).toBe(money - city.lastMonth.expense);
   });
   it("住民と雇用があれば月末に税収が入る", () => {
