@@ -13,6 +13,12 @@ const COLORS: Record<number, [number, number, number]> = {
 /** プレビューが写す範囲 (一辺のタイル数)。 */
 const SPAN = 256;
 
+export const JAPAN_CITIES = [
+  ["札幌", 141.35, 43.06], ["仙台", 140.87, 38.27], ["東京", 139.70, 35.70],
+  ["名古屋", 136.91, 35.18], ["大阪", 135.50, 34.69], ["広島", 132.46, 34.40],
+  ["福岡", 130.40, 33.59], ["那覇", 127.68, 26.21],
+] as const;
+
 /** 日本列島全体を表示する範囲。南西諸島から北海道までを含む。 */
 export function japanPreviewBounds(): { x: number; y: number; span: number } {
   const origin = lonLatOfTile("japan", 0, 0)!;
@@ -62,5 +68,21 @@ export function drawMapPreview(canvas: HTMLCanvasElement, seed: number, size = 1
     ctx.strokeStyle = "#20242a";
     ctx.lineWidth = 1;
     ctx.stroke();
+    if (size >= 300) {
+      const origin = lonLatOfTile("japan", 0, 0)!;
+      const tpd = tilesPerDegOf("japan");
+      ctx.font = `${Math.max(9, Math.round(size / 55))}px sans-serif`;
+      ctx.textBaseline = "middle";
+      for (const [name, lon, lat] of JAPAN_CITIES) {
+        const tx = (lon - origin.lon) * tpd * Math.cos((lat * Math.PI) / 180);
+        const ty = (origin.lat - lat) * tpd;
+        const x = size / 2 + (tx - bounds.x) / tilesPerPx;
+        const y = size / 2 + (ty - bounds.y) / tilesPerPx;
+        ctx.fillStyle = "rgba(20,30,40,.9)";
+        ctx.beginPath(); ctx.arc(x, y, 2.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2; ctx.strokeText(name, x + 5, y);
+        ctx.fillStyle = "#fff"; ctx.fillText(name, x + 5, y);
+      }
+    }
   } else ctx.strokeRect(sx - w / 2, sy - h / 2, w, h);
 }

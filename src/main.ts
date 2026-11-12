@@ -40,9 +40,9 @@ import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, dens
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
-import { applyLocale, formatMoney, loadCurrency, loadLocale, LOCALES, setCurrency, text, translateDom, type Currency, type Locale } from "./i18n";
+import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.37";
+const VERSION = "0.95.38";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -133,7 +133,8 @@ function createStorage(): KeyValueStorage {
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 let activeLocale: Locale = "ja";
 let activeCurrency: Currency = "JPY";
-const yen = (n: number) => formatMoney(n, activeCurrency, activeLocale);
+let activeUsdRate = 150;
+const yen = (n: number) => formatMoney(n, activeCurrency, activeLocale, activeUsdRate);
 const formatDate = (day: number) => `${Math.floor(day / 360) + 1}年${Math.floor((day % 360) / 30) + 1}月${(day % 30) + 1}日`;
 
 async function main() {
@@ -164,6 +165,7 @@ async function main() {
   let locale: Locale = loadLocale();
   activeLocale = locale;
   activeCurrency = loadCurrency();
+  activeUsdRate = loadUsdRate();
   applyLocale(document, locale);
   const localeSelect = $<HTMLSelectElement>("menu-locale");
   for (const option of LOCALES) localeSelect.append(new Option(option.name, option.id));
@@ -717,9 +719,12 @@ async function main() {
       p.textContent = matchMedia("(pointer: coarse)").matches ? text.replace(/\(キー [^)]*\)/g, "") : text;
       body.append(p);
     }
+    if (activeLocale !== "ja") translateDom(tutEl, activeLocale);
+    $("tut-done").textContent = text("tutorialDone", activeLocale);
+    $("tut-prev").textContent = text("tutorialPrev", activeLocale);
     $("tut-done").classList.toggle("hidden", !t.satisfied);
     $("tut-prev").classList.toggle("hidden", t.index === 0);
-    $("tut-next").textContent = t.isLast ? "終了" : s.check ? "この手順を飛ばす" : "次へ";
+    $("tut-next").textContent = t.isLast ? text("tutorialFinish", activeLocale) : s.check ? text("tutorialSkip", activeLocale) : text("tutorialNext", activeLocale);
     $("tut-next").classList.toggle("primary", !s.check || t.isLast);
     clearHints();
     tutSelectors = s.highlight;
@@ -975,6 +980,7 @@ async function main() {
     $("menu-map").textContent = `マップ: ${g.mapName} (シード ${g.city.seed})`;
     ($("menu-locale") as HTMLSelectElement).value = locale;
     ($("menu-currency") as HTMLSelectElement).value = activeCurrency;
+    ($("menu-usd-rate") as HTMLInputElement).value = String(activeUsdRate);
     $("menu-japan-overview").classList.toggle("hidden", g.city.seed !== REGION_SEEDS.japan);
     const { lastMonth, lastBudget } = g.city;
     $("menu-budget").textContent = lastBudget
@@ -1225,6 +1231,14 @@ async function main() {
   $("menu-currency").addEventListener("change", (event) => {
     activeCurrency = (event.target as HTMLSelectElement).value as Currency;
     setCurrency(activeCurrency);
+    updatePanel(g!.city); updateProgressMenu(); updateTransitMenu(); updateParkingMenu(); updateResourceMenu(); updateLoanMenu();
+    refreshTranslatedText();
+  });
+  $("menu-usd-rate").addEventListener("change", (event) => {
+    const value = Number((event.target as HTMLInputElement).value);
+    if (!Number.isFinite(value) || value < 50 || value > 500) return;
+    activeUsdRate = value;
+    setUsdRate(value);
     updatePanel(g!.city); updateProgressMenu(); updateTransitMenu(); updateParkingMenu(); updateResourceMenu(); updateLoanMenu();
     refreshTranslatedText();
   });

@@ -2,6 +2,7 @@ export type Locale = "ja" | "en" | "zh-CN" | "ko";
 export type Currency = "JPY" | "USD";
 export const LOCALE_STORAGE_KEY = "ccim.locale.v2";
 export const CURRENCY_STORAGE_KEY = "ccim.currency.v1";
+export const USD_RATE_STORAGE_KEY = "ccim.usdRate.v1";
 
 export const LOCALES: readonly { id: Locale; name: string }[] = [
   { id: "ja", name: "日本語" },
@@ -33,6 +34,11 @@ const TEXT: Record<string, Record<Locale, string>> = {
   newGameStart: { ja: "この設定で始める", en: "Start with these settings", "zh-CN": "使用此设置开始", ko: "이 설정으로 시작" },
   mapBack: { ja: "マップを選び直す", en: "Choose another map", "zh-CN": "重新选择地图", ko: "맵 다시 선택" },
   disasterSetting: { ja: "災害あり（火災・発電施設の故障・洪水・地震）", en: "Disasters (fires, outages, floods, earthquakes)", "zh-CN": "启用灾害（火灾、停电、洪水、地震）", ko: "재해 있음 (화재·정전·홍수·지진)" },
+  tutorialPrev: { ja: "戻る", en: "Back", "zh-CN": "返回", ko: "뒤로" },
+  tutorialNext: { ja: "次へ", en: "Next", "zh-CN": "下一步", ko: "다음" },
+  tutorialSkip: { ja: "この手順を飛ばす", en: "Skip this step", "zh-CN": "跳过此步骤", ko: "이 단계 건너뛰기" },
+  tutorialFinish: { ja: "終了", en: "Finish", "zh-CN": "完成", ko: "완료" },
+  tutorialDone: { ja: "✓ できました!", en: "✓ Done!", "zh-CN": "✓ 完成！", ko: "✓ 완료!" },
 };
 
 export function loadLocale(): Locale {
@@ -56,12 +62,23 @@ export function setCurrency(currency: Currency): void {
   try { localStorage.setItem(CURRENCY_STORAGE_KEY, currency); } catch { /* 保存できなくても現在の画面は切り替える */ }
 }
 
+export function loadUsdRate(): number {
+  try {
+    const value = Number(localStorage.getItem(USD_RATE_STORAGE_KEY));
+    return Number.isFinite(value) && value >= 50 && value <= 500 ? value : 150;
+  } catch { return 150; }
+}
+
+export function setUsdRate(rate: number): void {
+  try { localStorage.setItem(USD_RATE_STORAGE_KEY, String(rate)); } catch { /* 保存できなくても現在の画面には反映する */ }
+}
+
 export function text(key: string, locale: Locale): string {
   return TEXT[key]?.[locale] ?? TEXT[key]?.en ?? key;
 }
 
-export function formatMoney(amountYen: number, currency: Currency, locale: Locale): string {
-  const amount = currency === "USD" ? amountYen / 150 : amountYen;
+export function formatMoney(amountYen: number, currency: Currency, locale: Locale, usdRate = 150): string {
+  const amount = currency === "USD" ? amountYen / usdRate : amountYen;
   const language = locale === "ja" ? "ja-JP" : locale === "zh-CN" ? "zh-CN" : locale === "ko" ? "ko-KR" : "en-US";
   return new Intl.NumberFormat(language, { style: "currency", currency, maximumFractionDigits: 0 }).format(Math.round(amount));
 }

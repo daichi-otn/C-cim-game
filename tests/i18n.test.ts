@@ -12,5 +12,6 @@ describe("M15 言語切り替え", () => {
   it("円とドルを表示できる", () => {
     expect(formatMoney(1500, "JPY", "ja")).toContain("￥");
     expect(formatMoney(1500, "USD", "en")).toContain("$");
+    expect(formatMoney(1600, "USD", "en", 160)).toContain("$10");
   });
 });
