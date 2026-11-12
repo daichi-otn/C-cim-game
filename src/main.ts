@@ -1978,6 +1978,7 @@ async function main() {
     setBar(panel.bars.c, city.demand.c);
     setBar(panel.bars.i, city.demand.i);
     setBar(panel.bars.o, city.demand.o);
+    if (activeLocale !== "ja") translateDom($("panel"), activeLocale);
   }
 
   let previewKey = "";
