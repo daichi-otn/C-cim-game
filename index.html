@@ -226,9 +226,9 @@
     <div id="panel">
       <button id="panel-toggle" type="button">情報 ▾</button>
       <div class="row"><b id="date"></b><span class="sub"><span id="pause-key">Space</span>: 一時停止</span></div>
-      <div class="row sub"><span>季節・天気</span><span id="weather"></span></div>
-      <div class="row"><span>資金</span><b id="money"></b></div>
-      <div class="row"><span>人口</span><b id="pop"></b></div>
+      <div class="row sub"><span data-i18n="weather">季節・天気</span><span id="weather"></span></div>
+      <div class="row"><span data-i18n="money">資金</span><b id="money"></b></div>
+      <div class="row"><span data-i18n="population">人口</span><b id="pop"></b></div>
       <div class="row sub"><span>先月の収支</span><span id="balance"></span></div>
       <div class="row"><span>税率</span><span><button id="tax-down">−</button> <b id="tax"></b> <button id="tax-up">＋</button></span></div>
       <div class="row"><span style="color:#f2c230">電力</span><b id="util-power"></b></div>
@@ -296,15 +296,15 @@
           <p id="selected-map" class="selected-map"></p>
           <label class="setting-row"><input type="checkbox" id="new-game-sound"> 音を出す</label>
           <label class="setting-row"><input type="checkbox" id="new-game-dev"> 開発者モード</label>
-          <label class="setting-row"><input type="checkbox" id="new-game-disasters"> 災害あり（火災・発電施設の故障・洪水・地震）</label>
+          <label class="setting-row"><input type="checkbox" id="new-game-disasters"> <span data-i18n="disasterSetting">災害あり（火災・発電施設の故障・洪水・地震）</span></label>
           <label class="setting-row">マップの大きさ <select id="new-game-map-size"><option value="small">小（約128×128タイル）</option><option value="medium" selected>中（約256×256タイル）</option><option value="large">大（約512×512タイル）</option><option value="country">国土（日本全体・約4096×4096タイル）</option></select></label>
           <h2>グラフィック</h2>
           <p class="sub" style="margin:-4px 0 6px;font-size:12px;color:#9aa5b1">端末に合わせて、街を始める前に描画の軽さを調整できます。</p>
           <div id="new-game-graphics"></div>
           <p id="new-game-msg"></p>
           <div class="row-end">
-            <button id="new-game-back" class="btn">マップを選び直す</button>
-            <button id="new-game-start" class="btn primary">この設定で始める</button>
+            <button id="new-game-back" class="btn" data-i18n="mapBack">マップを選び直す</button>
+            <button id="new-game-start" class="btn primary" data-i18n="newGameStart">この設定で始める</button>
           </div>
         </div>
         <div class="row-end"><button id="title-close" class="btn hidden">ゲームに戻る</button></div>
@@ -314,6 +314,11 @@
       <div class="sheet small">
         <h2 style="margin-top:0" data-i18n="menu">メニュー</h2>
         <p id="menu-map"></p>
+        <div class="row-end" style="justify-content:flex-start;align-items:center">
+          <button id="menu-language" class="btn" data-i18n="language">言語</button>
+          <label class="btn"><span data-i18n="language">言語</span> <select id="menu-locale" aria-label="Language"></select></label>
+          <label class="btn"><span data-i18n="currency">通貨</span> <select id="menu-currency" aria-label="Currency"><option value="JPY">￥ JPY</option><option value="USD">＄ USD</option></select></label>
+        </div>
         <div id="menu-outage" class="hidden"><h2>停電・復旧</h2><p id="menu-outage-detail"></p><button id="repair-outage" class="btn">200万円で今すぐ修理</button></div>
         <div id="menu-damaged-facilities" class="hidden"><h2>地震で損傷した施設</h2><p>10日で自動復旧します。1施設につき200万円で即時修理できます。</p><div id="damaged-facilities-list"></div></div>
         <div id="menu-damaged-roads" class="hidden"><h2>地震で損傷した道路</h2><p>通行量と速度が低下します。8日で自動復旧し、1区間100万円で即時修理もできます。</p><div id="damaged-roads-list"></div></div>
@@ -358,7 +363,6 @@
         <div class="row-end">
           <button id="menu-help" class="btn" data-i18n="help">使い方・操作キー</button>
           <button id="menu-tutorial" class="btn" data-i18n="tutorial">チュートリアル (新しい街で)</button>
-          <button id="menu-language" class="btn" data-i18n="language">言語: 日本語</button>
           <button id="menu-sound" class="btn">音: あり</button>
           <label style="display:flex;align-items:center;gap:6px;color:#d4dae2">音量 <input id="menu-volume" type="range" min="0" max="1" step="0.05" style="width:110px"><span id="menu-volume-value">80%</span></label>
           <button id="menu-alert-test" class="btn hidden">緊急速報のテスト (開発用)</button>

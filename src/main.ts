@@ -40,9 +40,9 @@ import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, dens
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
-import { applyLocale, loadLocale, text, LOCALE_STORAGE_KEY, type Locale } from "./i18n";
+import { applyLocale, formatMoney, loadCurrency, loadLocale, LOCALES, setCurrency, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.36";
+const VERSION = "0.95.37";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -95,7 +95,7 @@ function facilityInfo(type: FacilityType): string {
     solar: "(晴れで最大。くもり ×0.5・雨 ×0.25・雪 ×0.2、夏は多く冬は少ない。汚染なし)",
   };
   const supply = spec.output ? `供給 ${spec.capacity}${outputNote[spec.output]}` : spec.waste ? `ごみを 1 日 ${spec.waste} 処理(道路でつなぐ。まわりに悪臭が出る)` : spec.relief ? `まわり半径 ${spec.radius} タイルの${[spec.relief.air > 0 ? `大気汚染 −${pct(spec.relief.air)}` : "", spec.relief.noise > 0 ? `騒音 −${pct(spec.relief.noise)}` : ""].filter(Boolean).join("・")}(近いほど強い)` : spec.coverage !== null ? `${COVERAGE_NAMES[spec.coverage]}が半径 ${spec.radius} タイルに届く${spec.officeBoost ? "・オフィスの需要が上がる" : ""}` : spec.service === null ? "住民が引っ越してくる入口" : `供給 ${spec.capacity}`;
-  return `${spec.name}(${spec.size}×${spec.size}): 建設費 ${spec.cost.toLocaleString("ja-JP")} 円 / 維持費 ${spec.upkeep.toLocaleString("ja-JP")} 円/月 / ${supply}`;
+  return `${spec.name}(${spec.size}×${spec.size}): 建設費 ${yen(spec.cost)} / 維持費 ${yen(spec.upkeep)}/月 / ${supply}`;
 }
 /** ゾーンを塗る (または解除する) ツールと、その種類。 */
 const ZONE_TOOLS: Partial<Record<Tool, ZoneType>> = {
@@ -131,7 +131,9 @@ function createStorage(): KeyValueStorage {
 }
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
-const yen = (n: number) => `${n < 0 ? "-" : ""}${Math.abs(Math.round(n)).toLocaleString("ja-JP")}`;
+let activeLocale: Locale = "ja";
+let activeCurrency: Currency = "JPY";
+const yen = (n: number) => formatMoney(n, activeCurrency, activeLocale);
 const formatDate = (day: number) => `${Math.floor(day / 360) + 1}年${Math.floor((day % 360) / 30) + 1}月${(day % 30) + 1}日`;
 
 async function main() {
@@ -160,7 +162,17 @@ async function main() {
   }
   const camera = world.view;
   let locale: Locale = loadLocale();
+  activeLocale = locale;
+  activeCurrency = loadCurrency();
   applyLocale(document, locale);
+  const localeSelect = $<HTMLSelectElement>("menu-locale");
+  for (const option of LOCALES) localeSelect.append(new Option(option.name, option.id));
+  localeSelect.value = locale;
+  const updateLanguageButton = () => {
+    $("menu-language").textContent = `${text("language", locale)}: ${LOCALES.find((x) => x.id === locale)?.name ?? locale}`;
+  };
+  updateLanguageButton();
+  const refreshTranslatedText = () => { if (activeLocale !== "ja") translateDom(document, activeLocale); };
   // ホスティング (Netlify) が右下に重ねるバッジ (id: nl-badge-frame) があるときは、画面の下の道具が隠れないように、位置を上げる
   const markBadge = () => document.body.classList.toggle("has-badge", document.getElementById("nl-badge-frame") !== null);
   markBadge();
@@ -360,7 +372,7 @@ async function main() {
   const palette = $("road-palette");
   const roadInfo = (t: RoadType) => {
     const s = ROAD_SPECS[t];
-    return `${s.name}: ${s.cost.toLocaleString("ja-JP")} 円/タイル・維持費 ${s.upkeep.toLocaleString("ja-JP")} 円/月・${s.capacity === 0 ? "車は通れない" : `容量 ${s.capacity} 台/日`}。${s.note}`;
+    return `${s.name}: ${yen(s.cost)}/タイル・維持費 ${yen(s.upkeep)}/月・${s.capacity === 0 ? "車は通れない" : `容量 ${s.capacity} 台/日`}。${s.note}`;
   };
   function selectRoadType(t: RoadType) {
     roadType = t;
@@ -371,7 +383,7 @@ async function main() {
     const b = document.createElement("button");
     b.dataset.road = String(t);
     b.id = `road-type-${t}`;
-    b.innerHTML = `${ROAD_SPECS[t].name}<span>${(ROAD_SPECS[t].cost / 10_000).toLocaleString("ja-JP")}万</span>`;
+    b.innerHTML = `${ROAD_SPECS[t].name}<span>${yen(ROAD_SPECS[t].cost)}</span>`;
     b.addEventListener("click", () => selectRoadType(t));
     palette.append(b);
   }
@@ -772,7 +784,7 @@ async function main() {
       title.textContent = slotLabel(slot);
       const detail = document.createElement("span");
       if (summary) {
-        detail.textContent = `${summary.mapName} / ${formatDate(summary.day)} / 人口 ${summary.population.toLocaleString("ja-JP")} / ${yen(summary.money)} 円 / 保存: ${new Date(summary.savedAt).toLocaleString("ja-JP")}`;
+        detail.textContent = `${summary.mapName} / ${formatDate(summary.day)} / 人口 ${summary.population.toLocaleString("ja-JP")} / ${yen(summary.money)} / 保存: ${new Date(summary.savedAt).toLocaleString("ja-JP")}`;
       } else if (broken) {
         detail.textContent = broken;
         detail.className = "broken";
@@ -961,10 +973,12 @@ async function main() {
     if (!g || !titleEl.classList.contains("hidden")) return;
     reportMenu("");
     $("menu-map").textContent = `マップ: ${g.mapName} (シード ${g.city.seed})`;
+    ($("menu-locale") as HTMLSelectElement).value = locale;
+    ($("menu-currency") as HTMLSelectElement).value = activeCurrency;
     $("menu-japan-overview").classList.toggle("hidden", g.city.seed !== REGION_SEEDS.japan);
     const { lastMonth, lastBudget } = g.city;
     $("menu-budget").textContent = lastBudget
-      ? `税収 ${yen(lastMonth.income)} 円 / 道路 ${yen(lastBudget.roads)} 円 / 年金 ${yen(lastBudget.pensions)} 円 / 施設 ${yen(lastBudget.facilities)} 円 / 利息 ${yen(lastBudget.interest)} 円 / 暮らしの支援 ${yen(lastBudget.welfare)} 円 / 災害対策 ${yen(lastBudget.disasterPreparedness)} 円 / 収支 ${yen(lastMonth.income - lastMonth.expense)} 円（地区の財布から支払った分は含みません）`
+      ? `税収 ${yen(lastMonth.income)} / 道路 ${yen(lastBudget.roads)} / 年金 ${yen(lastBudget.pensions)} / 施設 ${yen(lastBudget.facilities)} / 利息 ${yen(lastBudget.interest)} / 暮らしの支援 ${yen(lastBudget.welfare)} / 災害対策 ${yen(lastBudget.disasterPreparedness)} / 収支 ${yen(lastMonth.income - lastMonth.expense)}（地区の財布から支払った分は含みません）`
       : "内訳は次の月の決算後に表示されます。";
     updateLoanMenu();
     updateOutageMenu();
@@ -983,6 +997,7 @@ async function main() {
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
     menuSeen = true;
+    refreshTranslatedText();
   }
 
   const japanOverview = $("japan-overview");
@@ -1013,7 +1028,7 @@ async function main() {
     const s = statisticsOf(g.city);
     const intersections = intersectionStats(g.city.graph);
     const movingResidents = g.city.people.filter((person) => person.work).length;
-    $("menu-statistics").textContent = `人口 ${s.population} 人 / 建物 ${s.buildings} 棟 / 道路 ${s.roads} 区間 / 交差点 T字${intersections.t}・十字${intersections.cross}・信号${intersections.signal} / 施設 ${s.facilities} / 資金 ${yen(s.money)} 円 / 渋滞 ${s.jammedRoads} 区間 / 病気 ${s.sick} 人 / 通勤中 ${movingResidents} 人`;
+    $("menu-statistics").textContent = `人口 ${s.population} 人 / 建物 ${s.buildings} 棟 / 道路 ${s.roads} 区間 / 交差点 T字${intersections.t}・十字${intersections.cross}・信号${intersections.signal} / 施設 ${s.facilities} / 資金 ${yen(s.money)} / 渋滞 ${s.jammedRoads} 区間 / 病気 ${s.sick} 人 / 通勤中 ${movingResidents} 人`;
     const history = g.city.history;
     const points = history.length ? history.slice(-12) : [{ population: s.population, money: s.money, risk: s.environmentalRisk }];
     const maxPop = Math.max(1, ...points.map((p) => p.population));
@@ -1080,7 +1095,7 @@ async function main() {
   function updateLoanMenu() {
     if (!g) return;
     const city = g.city;
-    $("menu-loan").textContent = `借入残高 ${yen(city.loanBalance)} 円 / 翌月の利息 ${yen(Math.round(city.loanBalance * 0.01))} 円 / 市の資金 ${yen(city.money)} 円`;
+    $("menu-loan").textContent = `借入残高 ${yen(city.loanBalance)} / 翌月の利息 ${yen(Math.round(city.loanBalance * 0.01))} / 市の資金 ${yen(city.money)}`;
     ($("loan-borrow") as HTMLButtonElement).disabled = city.loanBalance >= 1000000000;
     ($("loan-repay") as HTMLButtonElement).disabled = city.loanBalance <= 0 || city.money < Math.min(100000000, city.loanBalance);
   }
@@ -1192,9 +1207,26 @@ async function main() {
   $("menu-close").addEventListener("click", closeMenu);
   $("menu-language").addEventListener("click", () => {
     locale = locale === "ja" ? "en" : "ja";
+    activeLocale = locale;
+    ($("menu-locale") as HTMLSelectElement).value = locale;
+    updateLanguageButton();
+    $("menu-close").textContent = text("close", locale);
+    updatePanel(g!.city); updateProgressMenu(); updateTransitMenu(); updateParkingMenu(); updateResourceMenu(); updateLoanMenu();
+    refreshTranslatedText();
+  });
+  $("menu-locale").addEventListener("change", (event) => {
+    locale = (event.target as HTMLSelectElement).value as Locale;
+    activeLocale = locale;
     applyLocale(document, locale);
-    try { localStorage.setItem(LOCALE_STORAGE_KEY, locale); } catch { /* 現在の画面は切り替える */ }
-    $("menu-language").textContent = text("language", locale);
+    updateLanguageButton();
+    updatePanel(g!.city); updateProgressMenu(); updateTransitMenu(); updateParkingMenu(); updateResourceMenu(); updateLoanMenu();
+    refreshTranslatedText();
+  });
+  $("menu-currency").addEventListener("change", (event) => {
+    activeCurrency = (event.target as HTMLSelectElement).value as Currency;
+    setCurrency(activeCurrency);
+    updatePanel(g!.city); updateProgressMenu(); updateTransitMenu(); updateParkingMenu(); updateResourceMenu(); updateLoanMenu();
+    refreshTranslatedText();
   });
   $("menu-title").addEventListener("click", openTitle);
   /** グラフィック設定の欄を作る: 項目ごとに 5 つの段階のボタン。 */
@@ -1508,7 +1540,7 @@ async function main() {
     const corner = toScreen(c[0]!.x, c[0]!.y);
     loopLabel(2, corner.x, corner.y, "90°");
     const mid = toScreen((c[0]!.x + c[2]!.x) / 2, (c[0]!.y + c[2]!.y) / 2);
-    loopLabel(3, mid.x, mid.y, q.ok ? `${q.cost.toLocaleString("ja-JP")} 円` : q.reason ?? "");
+    loopLabel(3, mid.x, mid.y, q.ok ? yen(q.cost) : q.reason ?? "");
     if (loopStart && q.ok && !g.city.canAfford(q.cost)) tip.textContent = "お金が足りません";
   }
 
@@ -1557,7 +1589,7 @@ async function main() {
       city.buildPath([...plan.corners, plan.corners[0]!], roadType, false);
       for (const d of plan.dividers) city.buildPath(d, roadType, false);
       loopStart = null;
-      showTip(`四角い道路を敷きました (${q.cost.toLocaleString("ja-JP")} 円)`, 3);
+      showTip(`四角い道路を敷きました (${yen(q.cost)})`, 3);
     } else if (tool === "upgrade") {
       // 道路をクリックすると、その道路 (ひとつながりの区間) を、パレットで選んだ種類に変える
       const e = graph.nearestEdge(t.x, t.y, 0.7);
@@ -1568,7 +1600,7 @@ async function main() {
       const q = city.quoteUpgrade(e.id, roadType);
       if (q.sections === 0) showTip(`${ROAD_SPECS[roadType].name}: すでにその種類です`, 2);
       else if (!city.canAfford(q.cost)) showTip("お金が足りません", 3);
-      else if (city.upgradeRoad(e.id, roadType)) showTip(`${ROAD_SPECS[roadType].name}に変えました (${q.cost.toLocaleString("ja-JP")} 円)`, 3);
+      else if (city.upgradeRoad(e.id, roadType)) showTip(`${ROAD_SPECS[roadType].name}に変えました (${yen(q.cost)})`, 3);
     } else if (tool === "bulldoze") {
       // 施設の上なら施設を、そうでなければ近くの道路を取り壊す
       const f = city.facilityAt(Math.floor(t.x), Math.floor(t.y));
@@ -1794,7 +1826,7 @@ async function main() {
     if (districtsShown === city.districtsVersion && shownSelection === selectedDistrict) {
       for (const g of city.districts) {
         const el = walletEls.get(g.id);
-        if (el) el.textContent = `${yen(g.wallet)} 円`;
+        if (el) el.textContent = yen(g.wallet);
       }
       return;
     }
@@ -1825,7 +1857,7 @@ async function main() {
         selectedDistrict = selectedDistrict === g.id ? null : g.id;
       });
       const w = document.createElement("span");
-      w.textContent = `${yen(g.wallet)} 円`;
+      w.textContent = yen(g.wallet);
       walletEls.set(g.id, w);
       row.append(sw, nm, w);
       districtsEl.appendChild(row);
@@ -1912,11 +1944,11 @@ async function main() {
     const d = city.date;
     panel.date.textContent = `${d.year}年${d.month}月${d.day}日`;
     panel.weather.textContent = `${SEASON_NAMES[city.season]}・${WEATHER_NAMES[city.weather]}`;
-    panel.money.textContent = `${yen(city.money)} 円`;
+    panel.money.textContent = yen(city.money);
     panel.money.style.color = city.money < 0 ? "#e05a4f" : "";
     panel.pop.textContent = city.zones.totals().population.toLocaleString("ja-JP");
     const net = city.lastMonth.income - city.lastMonth.expense;
-    panel.balance.textContent = `${net >= 0 ? "+" : ""}${yen(net)} 円/月`;
+    panel.balance.textContent = `${net >= 0 ? "+" : ""}${yen(net)}/月`;
     panel.tax.textContent = `${Math.round(city.taxRate * 100)}%`;
     for (const k of SERVICES) {
       const u = city.utilities[k];
@@ -1996,7 +2028,7 @@ async function main() {
     else {
       const spec = FACILITY_SPECS[type];
       const reach = spec.coverage !== null ? ` / ${COVERAGE_NAMES[spec.coverage]}が半径 ${spec.radius} タイルに届く` : spec.relief ? ` / 半径 ${spec.radius} タイルの汚染・騒音を減らす` : "";
-      tip.textContent = `${spec.name}(${spec.size}×${spec.size}): クリックで建設 (${spec.cost.toLocaleString("ja-JP")} 円${reach})`;
+      tip.textContent = `${spec.name}(${spec.size}×${spec.size}): クリックで建設 (${yen(spec.cost)}${reach})`;
     }
   }
 
@@ -2128,7 +2160,7 @@ async function main() {
               ? q.reason ?? "ここには敷けません"
               : q.sections === 0
                 ? `${ROAD_SPECS[roadType].name}: すでに同じ道路があります`
-                : `${ROAD_SPECS[roadType].name}${roadOneWay ? " (一方通行)" : ""}${curved ? " (曲線)" : ""}${extra ? `・${extra}` : ""}: ${q.cost.toLocaleString("ja-JP")} 円${!city.canAfford(q.cost) ? " (お金が足りません)" : ""}`;
+                : `${ROAD_SPECS[roadType].name}${roadOneWay ? " (一方通行)" : ""}${curved ? " (曲線)" : ""}${extra ? `・${extra}` : ""}: ${yen(q.cost)}${!city.canAfford(q.cost) ? " (お金が足りません)" : ""}`;
         }
         const valid = !!roadQuote?.ok;
         world.roads.showPreview({ ax: roadStart.x, ay: roadStart.y, bx: p.x, by: p.y, valid, type: roadType, oneWay: roadOneWay, points: pts, control: roadCurve ? (roadControl ?? undefined) : undefined });
@@ -2151,7 +2183,7 @@ async function main() {
           upgradeOk = q.sections > 0 && city.canAfford(q.cost);
           tipUntil = 0;
           tip.style.display = "block";
-          tip.textContent = q.sections === 0 ? `${ROAD_SPECS[roadType].name}: すでにその種類です` : `${ROAD_SPECS[roadType].name}に変える: ${q.cost.toLocaleString("ja-JP")} 円 (${q.sections} 区間)${!city.canAfford(q.cost) ? " お金が足りません" : ""}`;
+          tip.textContent = q.sections === 0 ? `${ROAD_SPECS[roadType].name}: すでにその種類です` : `${ROAD_SPECS[roadType].name}に変える: ${yen(q.cost)} (${q.sections} 区間)${!city.canAfford(q.cost) ? " お金が足りません" : ""}`;
         }
         world.roads.showEdges(upgradeEdges.length > 0 ? upgradeEdges : city.graph.roadRun(e.id), upgradeOk ? 0x7bd88f : 0xe05a4f);
       }
