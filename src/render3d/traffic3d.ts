@@ -87,7 +87,7 @@ export function travelFrom(graph: RoadGraph, node: number): Step[] {
  * 出発の交差点から、目的地 (ランダムに選んだ交差点) までの道順を求める (最短の道のり)。
  * 行き先が届かないときは空の道順 (その場で引き返す)。見た目のための計算で、街の交通の計算には使わない。
  */
-export function routeTo(graph: RoadGraph, from: number, seed: number, goal?: number): Step[] {
+export function routeTo(graph: RoadGraph, from: number, seed: number, goal?: number, avoidEdge = -1): Step[] {
   const nodes = [...graph.nodes.keys()];
   if (nodes.length < 2) return [];
   const target = goal ?? nodes[Math.floor(hash2(seed, from, nodes.length) * nodes.length)]!;
@@ -106,6 +106,7 @@ export function routeTo(graph: RoadGraph, from: number, seed: number, goal?: num
     if (cur === target) break;
     done.add(cur);
     for (const st of travelFrom(graph, cur)) {
+      if (st.edge === avoidEdge) continue;
       const e = graph.edges.get(st.edge)!;
       const other = st.dir > 0 ? e.b : e.a;
       const a = graph.nodes.get(e.a)!;
@@ -543,13 +544,18 @@ export class Traffic3D {
       car.uturn = 0;
       return;
     }
-    // 行き止まりで引き返す道順 (同じ区間を逆に戻る): 交差点へ入らず、その場で U ターンする
+    // 同じ道路を逆向きに戻る道順でも、交差点に別の分岐があればそちらを優先する。
+    // 道路の分割・建設直後に古い経路が残った場合も、目的地まで再探索する。
     if (car.route[0] && car.route[0].edge === car.edge) {
-      car.p = car.dir > 0 ? 1 : 0; // 端に止めて、そこで回る
-      car.uturn = 0;
-      car.speed = 0;
-      car.braking = false;
-      return;
+      const alternative = car.dest >= 0 ? routeTo(graph, reached, car.seed, car.dest, car.edge) : [];
+      if (alternative.length > 0) car.route = alternative;
+      else {
+        car.p = car.dir > 0 ? 1 : 0; // 端に止めて、そこで回る
+        car.uturn = 0;
+        car.speed = 0;
+        car.braking = false;
+        return;
+      }
     }
     // 次の区間の入り口に、ほかの車がいれば、交差点の手前で待つ (重ならないように)
     if (car.route.length > 0 && graph.edges.has(car.route[0]!.edge) && this.entryBlocked(car, car.route[0]!)) {

@@ -33,4 +33,19 @@ describe("車の道順", () => {
       if (e.oneWay === 1) expect(st.dir).toBe(1);
     }
   });
+
+  it("現在の道路を逆戻りする経路でも、交差点の別分岐を優先できる", () => {
+    const city = new City(12345);
+    const [x0, y0] = findLand();
+    city.buildRoad(x0 + 0.5, y0 + 0.5, x0 + 10.5, y0 + 0.5);
+    city.buildRoad(x0 + 10.5, y0 + 0.5, x0 + 10.5, y0 + 10.5);
+    city.buildRoad(x0 + 10.5, y0 + 0.5, x0 + 20.5, y0 + 0.5);
+    const edges = [...city.graph.edges.values()];
+    const junction = [...city.graph.nodes.values()].find((n) => Math.abs(n.x - (x0 + 10.5)) < 0.01 && Math.abs(n.y - (y0 + 0.5)) < 0.01)!;
+    const target = [...city.graph.nodes.values()].find((n) => Math.abs(n.x - (x0 + 10.5)) < 0.01 && Math.abs(n.y - (y0 + 10.5)) < 0.01)!;
+    const current = edges.find((e) => (e.a === junction.id || e.b === junction.id) && Math.abs((city.graph.nodes.get(e.a)!.y - city.graph.nodes.get(e.b)!.y)) < 0.01)!;
+    const route = routeTo(city.graph, junction.id, 7, target.id, current.id);
+    expect(route.length).toBeGreaterThan(0);
+    expect(route[0]!.edge).not.toBe(current.id);
+  });
 });
