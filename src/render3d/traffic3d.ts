@@ -19,8 +19,10 @@ import { lotCenter } from "../sim/zoning";
 /** 1 本の道路に同時に走らせる車の数の上限と、交通量 (台/日) あたりの台数。 */
 const FLOW_PER_CAR = 5;
 /** 空いている道での車の速さ (タイル/秒)。混むと遅くなる。 */
-const FREE_SPEED = 3;
-const MIN_SPEED_RATIO = 0.15;
+// 車が「動いている」と感じられるよう、巡航速度を少し高めにする。
+// 道路種別の速度倍率は維持し、細道と高速道路の差は残す。
+const FREE_SPEED = 3.6;
+const MIN_SPEED_RATIO = 0.18;
 /** 車を描くときの、中心線からの距離 (px)。左側通行で、進行方向の左を走る。 */
 const LANE_PX = TILE * 0.14;
 const CAR_COLORS = [0xe8e8ea, 0xd9564a, 0x4a90e2, 0xf2c230, 0x5ec27a, 0x8a8f98];
@@ -411,7 +413,7 @@ export class Traffic3D {
     car.stall = car.speed < 0.02 ? car.stall + dt : 0;
     const damage = !this.city.devMode && this.city.roadDamage.has(car.edge);
     const ratio = edgeCongestion(graph, car.edge, this.city.traffic.flow.get(car.edge) ?? 0, this.city.traffic.capMult * (damage ? DAMAGED_ROAD_CAPACITY : 1));
-    let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * (damage ? DAMAGED_ROAD_SPEED : 1) * Math.max(MIN_SPEED_RATIO, 1 - 0.85 * Math.min(1, ratio));
+    let vTarget = car.pace * FREE_SPEED * ROAD_SPECS[e.type].speed * (damage ? DAMAGED_ROAD_SPEED : 1) * Math.max(MIN_SPEED_RATIO, 1 - 0.78 * Math.min(1, ratio));
     const distToEnd = (car.dir > 0 ? 1 - car.p : car.p) * len;
     // 道順がない車が、端のすぐ手前で止まり続けないように、端に着いたことにする (行き先か、U ターンか、を決める)
     if (car.route.length === 0 && distToEnd <= 0.05) {
@@ -425,7 +427,7 @@ export class Traffic3D {
     else if (distToEnd < 1.5) {
       const next = car.route[0]!;
       const nd = Math.abs(this.headingOf(next) - car.heading);
-      if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.4);
+      if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.8);
     }
     // 交差点: 先に着く車がいるなら、手前で止まって譲る (車が交差点の中で重ならないように)
     const patient = car.stall < STALL_SEC;
