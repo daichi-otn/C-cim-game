@@ -42,7 +42,7 @@ import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.41";
+const VERSION = "0.95.42";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -862,6 +862,12 @@ async function main() {
     menuMsg.textContent = msg;
     menuMsg.classList.toggle("error", isError);
   };
+  const updatePolicyMenu = () => {
+    if (!g) return;
+    $("policy-tax").textContent = `${Math.round(g.city.taxRate * 100)}%`;
+    ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
+    ($("policy-disaster") as HTMLInputElement).checked = g.city.disasterPreparedness;
+  };
 
   const mapsEl = $("maps");
   const titleSelection = $("title-selection");
@@ -997,8 +1003,7 @@ async function main() {
     const volume = $<HTMLInputElement>("menu-volume");
     volume.value = String(soundscape.volumeLevel);
     $("menu-volume-value").textContent = `${Math.round(soundscape.volumeLevel * 100)}%`;
-    ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
-    ($("policy-disaster") as HTMLInputElement).checked = g.city.disasterPreparedness;
+    updatePolicyMenu();
     $("menu-language").textContent = text("language", locale);
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
@@ -1164,11 +1169,23 @@ async function main() {
     if (!g) return;
     g.city.welfarePolicy = (event.target as HTMLInputElement).checked;
     g.city.refresh();
+    updatePolicyMenu();
   });
   $("policy-disaster").addEventListener("change", (event) => {
     if (!g) return;
     g.city.disasterPreparedness = (event.target as HTMLInputElement).checked;
     g.city.refresh();
+    updatePolicyMenu();
+  });
+  $("policy-tax-down").addEventListener("click", () => {
+    if (!g) return;
+    g.city.setTaxRate(g.city.taxRate - 0.01);
+    updatePolicyMenu();
+  });
+  $("policy-tax-up").addEventListener("click", () => {
+    if (!g) return;
+    g.city.setTaxRate(g.city.taxRate + 0.01);
+    updatePolicyMenu();
   });
   $("transit-add-bus").addEventListener("click", () => {
     if (!g) return;
@@ -1823,8 +1840,16 @@ async function main() {
     coverage: $("coverage"),
     bars: { r: $("bar-r"), c: $("bar-c"), i: $("bar-i"), o: $("bar-o") },
   };
-  $("tax-down").addEventListener("click", () => g?.city.setTaxRate(g.city.taxRate - 0.01));
-  $("tax-up").addEventListener("click", () => g?.city.setTaxRate(g.city.taxRate + 0.01));
+  $("tax-down").addEventListener("click", () => {
+    if (!g) return;
+    g.city.setTaxRate(g.city.taxRate - 0.01);
+    updatePolicyMenu();
+  });
+  $("tax-up").addEventListener("click", () => {
+    if (!g) return;
+    g.city.setTaxRate(g.city.taxRate + 0.01);
+    updatePolicyMenu();
+  });
   /** 需要バー: 中央が 0。正なら右へ緑、負なら左へ赤。 */
   function setBar(el: HTMLElement, v: number) {
     el.style.width = `${Math.abs(v) * 50}%`;

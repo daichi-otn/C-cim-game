@@ -1,6 +1,6 @@
 {
   "name": "c-cim",
-  "version": "0.95.41",
+  "version": "0.95.42",
   "private": true,
   "type": "module",
   "scripts": {
