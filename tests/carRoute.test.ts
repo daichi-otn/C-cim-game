@@ -34,6 +34,25 @@ describe("車の道順", () => {
     }
   });
 
+  it("交差点では左折・右折の分岐を順に選ぶ", () => {
+    const city = new City(12345);
+    const [x0, y0] = findLand();
+    city.buildRoad(x0 + 0.5, y0 + 5.5, x0 + 10.5, y0 + 5.5);
+    city.buildRoad(x0 + 10.5, y0 + 5.5, x0 + 10.5, y0 + 0.5);
+    city.buildRoad(x0 + 10.5, y0 + 5.5, x0 + 20.5, y0 + 5.5);
+    const junction = [...city.graph.nodes.values()].find((n) => Math.abs(n.x - (x0 + 10.5)) < 0.01 && Math.abs(n.y - (y0 + 5.5)) < 0.01)!;
+    const north = [...city.graph.nodes.values()].find((n) => Math.abs(n.x - (x0 + 10.5)) < 0.01 && Math.abs(n.y - (y0 + 0.5)) < 0.01)!;
+    const east = [...city.graph.nodes.values()].find((n) => Math.abs(n.x - (x0 + 20.5)) < 0.01 && Math.abs(n.y - (y0 + 5.5)) < 0.01)!;
+    const west = [...city.graph.nodes.values()].find((n) => Math.abs(n.x - (x0 + 0.5)) < 0.01 && Math.abs(n.y - (y0 + 5.5)) < 0.01)!;
+    const turn = routeTo(city.graph, west.id, 11, north.id);
+    expect(turn).toHaveLength(2);
+    expect(turn[0]!.edge).not.toBe(turn[1]!.edge);
+    expect(turn[1]!.dir).toBe(1);
+    const right = routeTo(city.graph, junction.id, 12, east.id);
+    expect(right).toHaveLength(1);
+    expect(right[0]!.dir).toBe(1);
+  });
+
   it("現在の道路を逆戻りする経路でも、交差点の別分岐を優先できる", () => {
     const city = new City(12345);
     const [x0, y0] = findLand();
