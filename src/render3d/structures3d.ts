@@ -31,6 +31,7 @@ export class Structures3D {
   private litMat = new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, opacity: 0, depthWrite: false });
   private lastKey = "";
   private snowUniform = { value: 0 };
+  private realisticBuildings = false;
 
   /** 建設中の場所 (ここには描かない。建設の演出が描く)。 */
   constructor(private city: City, private construction?: { isHidden(key: string): boolean; version: number }) {
@@ -50,6 +51,13 @@ export class Structures3D {
     const o = Math.min(1, night * 1.15);
     this.litMat.opacity = o;
     for (const b of this.blocks.values()) if (b.lit) b.lit.visible = o > 0.02;
+  }
+
+  /** 建物の細部表示を切り替える。切り替え時は建物メッシュを作り直す。 */
+  setRealisticBuildings(on: boolean): void {
+    if (this.realisticBuildings === on) return;
+    this.realisticBuildings = on;
+    this.lastKey = "";
   }
 
   update(): void {
@@ -107,7 +115,7 @@ export class Structures3D {
   private makeBlock(items: { lot?: ZoneCell; district?: District; rot?: number; fac?: FacilityLike & { id: number } }[], sig: string): Block {
     const parts: Parts = { solid: new GeoBuilder(), glass: new GeoBuilder(), lit: new GeoBuilder() };
     for (const it of items) {
-      if (it.lot) addLot(parts, it.lot, it.district?.color, it.rot);
+      if (it.lot) addLot(parts, it.lot, it.district?.color, it.rot, this.realisticBuildings);
       else if (it.fac) {
         const conn = (this.city.facilityNet.get(it.fac.id) ?? 0) !== 0;
         addFacility(parts, it.fac, conn, true);

@@ -787,15 +787,15 @@ function roofOrnament(g: Sink, b: Rect, d: number, kind: number): void {
 }
 
 /** 建物ごとの個性を重ねる: 壁の模様・丸窓・屋上の飾り。同じ場所なら、いつも同じ。 */
-function addTouches(p: ShapeParts, c: ZoneCell, lights: boolean): void {
+function addTouches(p: ShapeParts, c: ZoneCell, lights: boolean, realistic = false): void {
   const b = rectOf(c);
   const d = wallHeight(c);
   const pattern = hash2(SEED + 200, c.x, c.y);
-  if (pattern < 0.25) facadePattern(p.solid, b, d, 1);
+  if (realistic || pattern < 0.25) facadePattern(p.solid, b, d, 1);
   else if (pattern < 0.4) facadePattern(p.solid, b, d, 2);
-  if (hash2(SEED + 201, c.x, c.y) < 0.18) roundWindows(p, b, d, lights);
+  if (realistic || hash2(SEED + 201, c.x, c.y) < 0.18) roundWindows(p, b, d, lights);
   const decor = hash2(SEED + 202, c.x, c.y);
-  if (decor < 0.12) roofOrnament(p.solid, b, d, 1);
+  if (realistic || decor < 0.12) roofOrnament(p.solid, b, d, 1);
   else if (decor < 0.22) roofOrnament(p.solid, b, d, 2);
   else if (decor < 0.3) roofOrnament(p.solid, b, d, 3);
 }
@@ -804,23 +804,23 @@ function addTouches(p: ShapeParts, c: ZoneCell, lights: boolean): void {
  * 建物 (アンカーのセル) の形を、parts に追加する。districtColor があれば、建物の色をその地区の色に寄せる。
  * rot は道路に沿う向き (ラジアン。敷地の中心のまわりに回す)。
  */
-export function addLot(p: ShapeParts, c: ZoneCell, districtColor?: number, rot = 0): void {
+export function addLot(p: ShapeParts, c: ZoneCell, districtColor?: number, rot = 0, realistic = false): void {
   tint = districtColor;
   try {
     if (Math.abs(rot) < 1e-9) {
-      addLotShape(p, c);
+      addLotShape(p, c, realistic);
       return;
     }
     const b = rectOf(c);
     const cx = b.x + b.w / 2;
     const cz = b.z + b.d / 2;
-    addLotShape({ solid: new RotatedSink(p.solid, rot, cx, cz), glass: new RotatedSink(p.glass, rot, cx, cz), lit: new RotatedSink(p.lit, rot, cx, cz) }, c);
+    addLotShape({ solid: new RotatedSink(p.solid, rot, cx, cz), glass: new RotatedSink(p.glass, rot, cx, cz), lit: new RotatedSink(p.lit, rot, cx, cz) }, c, realistic);
   } finally {
     tint = undefined;
   }
 }
 
-function addLotShape(p: ShapeParts, c: ZoneCell): void {
+function addLotShape(p: ShapeParts, c: ZoneCell, realistic: boolean): void {
   const served = c.served;
   const occupied = c.zone !== ZoneType.Residential || c.residents > 0;
   const lights = served && occupied;
@@ -836,7 +836,7 @@ function addLotShape(p: ShapeParts, c: ZoneCell): void {
     case "factory": (c.building === 1 && warehouseOf(c) ? addWarehouse : c.building === 2 && foodOf(c) ? addFoodPlant : c.building >= 3 && labOf(c) ? addLab : addFactory)(p, c, lights); break;
   }
   const tall = kindOf(c) === "homeTower" || kindOf(c) === "shopTower" || kindOf(c) === "officeTower" || kindOf(c) === "factory";
-  if (!tall) addTouches(p, c, lights); // 高層の塔と工場は、もとの形を保つ
+  if (!tall || realistic) addTouches(p, c, lights, realistic); // 高層の塔と工場は、通常は軽量表示。リアル表示では細部を追加
   if (!served) {
     // 供給のない建物: 屋根の上に赤い警告の球
     const b = rectOf(c);

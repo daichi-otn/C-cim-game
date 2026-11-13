@@ -29,6 +29,7 @@ export type GraphicsLevels = Record<GraphicsKey, number>;
 export const DEFAULT_GRAPHICS: GraphicsLevels = { shadows: 2, resolution: 2, trees: 2, cars: 2, weather: 2 };
 
 export const GRAPHICS_STORAGE_KEY = "ccim.graphics.v1";
+export const BUILDING_REALISM_STORAGE_KEY = "ccim.buildingRealism.v1";
 
 /** 保存された設定を読む。壊れている・範囲外の値は標準にする。 */
 export function parseGraphics(raw: string | null): GraphicsLevels {

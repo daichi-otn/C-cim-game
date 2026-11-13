@@ -12,7 +12,7 @@ import { DISTRICT_COLORS, GREENERY_NAMES, type Greenery } from "./sim/district";
 import { ACTION_DEFS, DEFAULT_KEYMAP, KEY_GROUP_NAMES, KEYMAP_STORAGE_KEY, actionFor, bindKey, keyLabel, parseKeymap, resolveKeyTokens, type ActionId, type KeyGroup, type Keymap } from "./keymap";
 import { type CameraBindings } from "./render3d/keyCamera";
 import { HELP_SECTIONS } from "./help";
-import { DEFAULT_GRAPHICS, GRAPHICS_LABELS, GRAPHICS_LEVEL_NAMES, GRAPHICS_STORAGE_KEY, parseGraphics, type GraphicsKey, type GraphicsLevels } from "./render3d/graphicsSettings";
+import { BUILDING_REALISM_STORAGE_KEY, DEFAULT_GRAPHICS, GRAPHICS_LABELS, GRAPHICS_LEVEL_NAMES, GRAPHICS_STORAGE_KEY, parseGraphics, type GraphicsKey, type GraphicsLevels } from "./render3d/graphicsSettings";
 import { planLoop, type LoopPlan } from "./sim/loopPlan";
 import { GARBAGE_GRACE } from "./sim/environment";
 import { COVERAGES, COVERAGE_NAMES, FACILITY_SPECS, FacilityType, SERVICES, type Service } from "./sim/facilities";
@@ -42,7 +42,7 @@ import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.42";
+const VERSION = "0.95.43";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -194,6 +194,11 @@ async function main() {
   };
   let graphics: GraphicsLevels = loadGraphics();
   world.applyGraphics(graphics);
+  const loadBuildingRealism = (): boolean => {
+    try { return localStorage.getItem(BUILDING_REALISM_STORAGE_KEY) === "1"; } catch { return false; }
+  };
+  let realisticBuildings = loadBuildingRealism();
+  world.applyBuildingRealism(realisticBuildings);
   let keymap: Keymap = loadKeymap();
   const keyName = (id: ActionId) => keyLabel(keymap[id]);
   const camBindings = (m: Keymap): CameraBindings => ({
@@ -1003,6 +1008,7 @@ async function main() {
     const volume = $<HTMLInputElement>("menu-volume");
     volume.value = String(soundscape.volumeLevel);
     $("menu-volume-value").textContent = `${Math.round(soundscape.volumeLevel * 100)}%`;
+    ($("menu-realistic-buildings") as HTMLInputElement).checked = realisticBuildings;
     updatePolicyMenu();
     $("menu-language").textContent = text("language", locale);
     renderSlots($("menu-slots"), "menu", reportMenu);
@@ -1297,6 +1303,17 @@ async function main() {
   }
   renderGraphicsMenu();
   renderGraphicsMenu(newGameGraphicsBox);
+  const realisticBuildingsBox = $<HTMLInputElement>("menu-realistic-buildings");
+  realisticBuildingsBox.addEventListener("change", () => {
+    realisticBuildings = realisticBuildingsBox.checked;
+    try {
+      localStorage.setItem(BUILDING_REALISM_STORAGE_KEY, realisticBuildings ? "1" : "0");
+    } catch {
+      // 保存できなくても、そのときの設定で描画する
+    }
+    world.applyBuildingRealism(realisticBuildings);
+    reportMenu(realisticBuildings ? "建物のリアル表示を有効にしました。建物を再描画しています。" : "建物のリアル表示を無効にしました。軽量表示へ戻しました。");
+  });
   const landBox = $<HTMLInputElement>("menu-land");
   landBox.addEventListener("change", () => {
     world.landHeat = landBox.checked;

@@ -72,6 +72,13 @@ export class World3D {
   private weather = new Weather3D();
   private facilityPreview = new FacilityPreview3D();
   private city: City | null = null;
+  private realisticBuildings = false;
+
+  /** 建物のリアル表示を切り替える。オンにすると細部が増え、描画負荷も上がる。 */
+  applyBuildingRealism(on: boolean): void {
+    this.realisticBuildings = on;
+    this.structures?.setRealisticBuildings(on);
+  }
 
   private treesOn: boolean;
   /** 木を描く割合の上限 (1 = 標準)。重い環境 (ソフトウェア描画) では小さくする。 */
@@ -155,6 +162,7 @@ export class World3D {
     this.construction = new Construction3D(city);
     this.scene.scene.add(this.construction.group);
     this.structures = new Structures3D(city, this.construction);
+    this.structures.setRealisticBuildings(this.realisticBuildings);
     this.scene.scene.add(this.structures.group);
     this.districts = new Districts3D(city);
     this.scene.scene.add(this.districts.group);
