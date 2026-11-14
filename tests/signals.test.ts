@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { buildSignalPlan, CYCLE_SEC, GREEN_SEC, intersectionStats, lightOf, YELLOW_SEC } from "../src/sim/signals";
+import { buildSignalPlan, buildSignalTimings, CYCLE_SEC, GREEN_SEC, intersectionStats, lightOf, YELLOW_SEC } from "../src/sim/signals";
 import { RoadGraph } from "../src/sim/roadGraph";
-import { RoadType } from "../src/sim/roadTypes";
+import { LANE, RoadType } from "../src/sim/roadTypes";
 
 /** 十字路交差点: 東西と南北の道が (5,5) で交わる。交差点の場所を探して返す。 */
 function cross(): { graph: RoadGraph; center: number } {
@@ -49,5 +49,30 @@ describe("信号の色", () => {
   });
   it("周期が過ぎると、同じ色に戻る", () => {
     expect(lightOf(0, 3)).toBe(lightOf(0, 3 + CYCLE_SEC));
+  });
+});
+
+describe("交通量に応じた信号制御", () => {
+  it("混雑している組へ青時間を多く配分する", () => {
+    const { graph, center } = cross();
+    const plan = buildSignalPlan(graph);
+    const approaches = plan.get(center)!;
+    const flow = new Map<number, number>();
+    for (const [edge, group] of approaches) flow.set(edge, group === 0 ? 100 : 10);
+    const timing = buildSignalTimings(graph, flow).get(center)!;
+    expect(timing.green[0]).toBeGreaterThan(timing.green[1]);
+    expect(timing.cycle).toBeGreaterThan(CYCLE_SEC - 0.01);
+  });
+
+  it("バスレーンの組を公共交通優先として配分する", () => {
+    const graph = new RoadGraph();
+    graph.addRoad(0, 5, 10, 5, RoadType.Street, false, 0, undefined, LANE.Bus);
+    graph.addRoad(5, 0, 5, 10, RoadType.Street);
+    const center = [...graph.nodes.values()].find((n) => n.x === 5 && n.y === 5)!.id;
+    const plan = buildSignalPlan(graph);
+    const flow = new Map([...plan.get(center)!].map(([edge]) => [edge, 10]));
+    const timing = buildSignalTimings(graph, flow).get(center)!;
+    expect(timing.priorityGroup).toBe(0);
+    expect(timing.green[0]).toBeGreaterThan(timing.green[1]);
   });
 });

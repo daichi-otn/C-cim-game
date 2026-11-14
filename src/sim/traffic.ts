@@ -2,6 +2,7 @@ import { WORKER_RATIO } from "./demand";
 import { ROAD_SPECS, RoadType, roadCapacity, roadSpeed } from "./roadTypes";
 import { isCarEdge, projectOnSegment, type RoadGraph } from "./roadGraph";
 import { ZONE_REACH, ZoneType, cellCapacity, type ZoneCell, type ZoneMap } from "./zoning";
+import { restrictionFactors, type TrafficRestriction } from "./trafficReality";
 
 /** 標準の道路 (通り) が 1 日にさばける車の数。これを超えると混む。道路の種類ごとの容量は roadTypes にある。 */
 export const EDGE_CAPACITY = ROAD_SPECS[RoadType.Street].capacity;
@@ -145,7 +146,14 @@ function accessPoint(graph: RoadGraph, x: number, y: number): { key: string; edg
  * 建物が道路の途中に面しているときは、そこで道路の区間を分けて、出入りする場所にする。
  * capMult: 天気による道路の容量の倍率 (雨・雪で下がる)。
  */
-export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1, damaged: ReadonlyMap<number, number> = new Map()): TrafficResult {
+export function calcTraffic(
+  graph: RoadGraph,
+  zones: ZoneMap,
+  capMult = 1,
+  damaged: ReadonlyMap<number, number> = new Map(),
+  restrictions: ReadonlyMap<number, TrafficRestriction> = new Map(),
+  day = 0,
+): TrafficResult {
   // 建物の出入口を集める
   interface Site {
     key: string;
@@ -194,6 +202,8 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1, damag
   for (const e of graph.edges.values()) {
     const spec = ROAD_SPECS[e.type];
     if (spec.capacity === 0) continue; // 歩行者道は車が通れない
+    const restriction = restrictionFactors(restrictions.get(e.id), day);
+    if (restriction.closed) continue;
     const a = graph.nodes.get(e.a)!;
     const b = graph.nodes.get(e.b)!;
     const len = Math.hypot(b.x - a.x, b.y - a.y);
@@ -204,8 +214,8 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1, damag
       const slot = edgeIds.length;
       edgeIds.push(e.id);
       edgeLen.push(stops[k + 1]!.pos - stops[k]!.pos);
-      edgeCap.push(roadCapacity(e.type, e.oneWay !== 0, e.lanes) * capMult * (damaged.has(e.id) ? DAMAGED_ROAD_CAPACITY : 1));
-      edgeSpeed.push(roadSpeed(e.type, e.oneWay !== 0) * (damaged.has(e.id) ? DAMAGED_ROAD_SPEED : 1));
+      edgeCap.push(roadCapacity(e.type, e.oneWay !== 0, e.lanes) * capMult * (damaged.has(e.id) ? DAMAGED_ROAD_CAPACITY : 1) * restriction.capacity);
+      edgeSpeed.push(roadSpeed(e.type, e.oneWay !== 0) * (damaged.has(e.id) ? DAMAGED_ROAD_SPEED : 1) * restriction.speed);
       // 一方通行は、決まった向きにだけ進める (a → b なら、道路の始端から終端へ)
       if (e.oneWay !== -1) (adj[from] ??= []).push({ edge: slot, to });
       if (e.oneWay !== 1) (adj[to] ??= []).push({ edge: slot, to: from });
@@ -304,7 +314,10 @@ export function calcTraffic(graph: RoadGraph, zones: ZoneMap, capMult = 1, damag
     weighted += congestionOf(f, edgeCap[s]!) * f * edgeLen[s]!;
     weight += f * edgeLen[s]!;
   }
-  for (const [id, f] of result.flow) if (edgeCongestion(graph, id, f, capMult * (damaged.has(id) ? DAMAGED_ROAD_CAPACITY : 1)) > JAM_RATIO) result.jammed++;
+  for (const [id, f] of result.flow) {
+    const restriction = restrictionFactors(restrictions.get(id), day);
+    if (restriction.closed || edgeCongestion(graph, id, f, capMult * (damaged.has(id) ? DAMAGED_ROAD_CAPACITY : 1) * restriction.capacity) > JAM_RATIO) result.jammed++;
+  }
   result.avgCongestion = weight > 0 ? weighted / weight : 0;
   return result;
 }

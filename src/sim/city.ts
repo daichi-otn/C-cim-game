@@ -42,7 +42,7 @@ import {
 import { AMENITY_REACH, LAND_TAX_BONUS, landValueOf } from "./landValue";
 import { agingFactor, isOldEnough, REBUILD_CHANCE } from "./aging";
 import { DISTRICT_COLORS, DISTRICT_MAX_COUNT, DISTRICT_MAX_SIZE, DISTRICT_MIN_SIZE, densityAllowed, districtAt, districtRect, type Allowed, type District, type Greenery } from "./district";
-import { ageMixAt, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PENALTY, type HomeSlot, type Person } from "./people";
+import { advanceEducation, ageMixAt, educationDaysOf, personLifeOf, PENSION_PER_SENIOR, reconcilePeople, UNSCHOOLED_HAPPINESS_PENALTY, type HomeSlot, type Person, type PersonLife } from "./people";
 import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACITY, capacityOf, cellCapacity, cleanEnv, lotArea, lotCenter, type CityTotals, type Density, type ZoneCell } from "./zoning";
 import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitMode, type TransitStop } from "./transit";
 import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
@@ -160,8 +160,8 @@ export interface CityData {
   /** size は省略可能 (昔のデータは 2×2)。 */
   facilities: { id: number; type: number; x: number; y: number; size?: number }[];
   /** 地区。省略可能 (昔のデータは地区なし)。 */
-  /** 住んでいる人 [id, 家のx, 家のy, 年齢 (日), 働き先のx (-1 = なし), 働き先のy]。省略可能 (昔のデータは、読み込んだあと作り直す)。 */
-  people?: [number, number, number, number, number, number][];
+  /** 住んでいる人 [id, 家のx, 家のy, 年齢 (日), 働き先のx (-1 = なし), 働き先のy, 就学日数]。後ろの項目は省略可能。 */
+  people?: [number, number, number, number, number, number, number?][];
   nextPersonId?: number;
   districts?: { id: number; name: string; color: number; x0: number; y0: number; x1: number; y1: number; taxRate?: number; allowed: boolean[]; wallet: number; greenery?: number }[];
   /** 公共交通。旧データでは省略される。 */
@@ -371,7 +371,7 @@ export class City {
       graph: this.graph.toData(),
       zones: [...this.zones.cells.values()].map((c) => (c.building > 0 ? [c.x, c.y, c.zone, c.building, c.residents, c.density, c.w, c.h, c.built] : [c.x, c.y, c.zone, c.building, c.residents, c.density])),
       facilities: [...this.facilities.values()].map((f) => ({ id: f.id, type: f.type, x: f.x, y: f.y, size: f.size })),
-      people: this.people.map((p) => [p.id, p.home[0], p.home[1], p.ageDays, p.work ? p.work[0] : -1, p.work ? p.work[1] : -1] as [number, number, number, number, number, number]),
+      people: this.people.map((p) => [p.id, p.home[0], p.home[1], p.ageDays, p.work ? p.work[0] : -1, p.work ? p.work[1] : -1, educationDaysOf(this.seed, p)]),
       nextPersonId: this.nextPersonId,
       districts: this.districts.map((g) => ({ id: g.id, name: g.name, color: g.color, x0: g.x0, y0: g.y0, x1: g.x1, y1: g.y1, taxRate: g.taxRate, allowed: [...g.allowed] as Allowed, wallet: g.wallet, greenery: g.greenery })),
       transit: { nextStopId: this.nextTransitStopId, nextLineId: this.nextTransitLineId, stops: this.transitStops.map((s) => ({ ...s })), lines: this.transitLines.map((l) => ({ ...l, stopIds: [...l.stopIds] })) },
@@ -488,10 +488,12 @@ export class City {
     if (d.people !== undefined) {
       if (!Array.isArray(d.people) || !isInt(d.nextPersonId ?? 1, 1)) throw new Error("住民のデータが不正です");
       const seen = new Set<number>();
-      for (const [id, hx, hy, age, wx, wy] of d.people) {
-        if (!isInt(id, 1) || seen.has(id) || !isInt(hx, -1e9, 1e9) || !isInt(hy, -1e9, 1e9) || !isInt(age, 0) || !isInt(wx, -1e9, 1e9) || !isInt(wy, -1e9, 1e9)) throw new Error("住民のデータが不正です");
+      for (const [id, hx, hy, age, wx, wy, educationDays] of d.people) {
+        if (!isInt(id, 1) || seen.has(id) || !isInt(hx, -1e9, 1e9) || !isInt(hy, -1e9, 1e9) || !isInt(age, 0) || !isInt(wx, -1e9, 1e9) || !isInt(wy, -1e9, 1e9) || (educationDays !== undefined && (!Number.isFinite(educationDays) || educationDays < 0 || educationDays > 16 * 365))) throw new Error("住民のデータが不正です");
         seen.add(id);
-        city.people.push({ id, home: [hx, hy], ageDays: age, work: wx === -1 ? null : [wx, wy] });
+        const person: Person = { id, home: [hx, hy], ageDays: age, work: wx === -1 ? null : [wx, wy], educationDays };
+        person.educationDays = educationDaysOf(city.seed, person);
+        city.people.push(person);
       }
       city.nextPersonId = d.nextPersonId ?? Math.max(0, ...seen) + 1; // 保存したとおり (次の人の番号を、ずらさない)
     }
@@ -1369,7 +1371,10 @@ export class City {
     }
     this.zones.fillResidents((c) => this.devMode || (this.outsideNets.has(c.net) && !unhealthy(c))); // 開発者モードでは、外部接続がなくても住民が入る
     // 住んでいる人は、一日ぶん歳をとり、家ごとの人数と合うように、一人ずつそろえる
-    for (const p of this.people) p.ageDays += 1;
+    for (const p of this.people) {
+      advanceEducation(this.seed, p, this.devMode || this.schooledCells.has(p.home.join(",")), this.educationPolicy);
+      p.ageDays += 1;
+    }
     this.syncPeople();
     this.day++;
     this.updateFire();
@@ -1588,6 +1593,30 @@ export class City {
     if (buildings.length === 0) return;
     const c = buildings[Math.floor(hash2(this.seed ^ 0x4a2f113, this.day, 1) * buildings.length)]!;
     this.fire = { x: c.x, y: c.y, started: this.day };
+  }
+
+  /** 個人生活の現在値。市の会計を変更せず、表示時に最新の政策・施設を反映する。 */
+  personLife(person: Person): PersonLife {
+    const home = this.zones.get(...person.home);
+    const work = person.work ? this.zones.get(...person.work) : undefined;
+    let shopDistance: number | null = null;
+    for (const cell of this.zones.cells.values()) {
+      if (cell.zone !== ZoneType.Commercial || !cell.building || cell.part !== undefined || !cell.served || !home || home.net <= 0 || cell.net !== home.net) continue;
+      const distance = Math.hypot(cell.x - home.x, cell.y - home.y);
+      shopDistance = Math.min(shopDistance ?? Infinity, distance);
+    }
+    return personLifeOf(this.seed, person, {
+      schooled: this.devMode || this.schooledCells.has(person.home.join(",")),
+      cared: this.devMode || !!home?.env.cared,
+      risk: this.devMode ? 0 : home?.env.risk ?? 0,
+      landValue: this.landValues.get(person.home.join(",")) ?? 0,
+      taxRate: (home ? this.districtOf(home)?.taxRate : undefined) ?? this.taxRate,
+      welfare: this.welfarePolicy, educationPolicy: this.educationPolicy,
+      medicalPolicy: this.medicalPolicy, trafficPolicy: this.trafficPolicy,
+      workConnected: !!home && !!work && work.building > 0 && work.served && home.net > 0 && home.net === work.net,
+      workKind: work?.zone === ZoneType.Office ? "office" : work?.zone === ZoneType.Industrial ? "industrial" : work?.zone === ZoneType.Commercial ? "commercial" : null,
+      shopDistance, congestion: this.traffic.avgCongestion, happiness: this.happiness,
+    });
   }
 
   /** 住んでいる人の一覧を、家ごとの人数 (区画の住民数) と働き先に合わせる。 */

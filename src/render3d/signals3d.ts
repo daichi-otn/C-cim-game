@@ -1,6 +1,6 @@
 import * as THREE from "three";
 import type { City } from "../sim/city";
-import { buildSignalPlan, lightOf, type Light } from "../sim/signals";
+import { buildSignalPlan, buildSignalTimings, timedLightOf, type Light, type SignalTimings } from "../sim/signals";
 import type { Roads3D } from "./roads3d";
 import { TILE } from "./terrain3d";
 
@@ -13,6 +13,7 @@ interface Head {
   y: number;
   z: number;
   group: number;
+  node: number;
 }
 
 export class Signals3D {
@@ -21,6 +22,8 @@ export class Signals3D {
   private lamps: THREE.InstancedMesh | null = null;
   private heads: Head[] = [];
   private version = -1;
+  private trafficVersion = -1;
+  private timings: SignalTimings = new Map();
   private shown: Light[] = [];
   private poleMat = new THREE.MeshLambertMaterial({ color: 0x4a4e55 });
   private lampMat = new THREE.MeshBasicMaterial({ color: 0xffffff });
@@ -41,9 +44,13 @@ export class Signals3D {
       this.version = graph.version;
       this.build();
     }
+    if (this.city.trafficVersion !== this.trafficVersion) {
+      this.trafficVersion = this.city.trafficVersion;
+      this.timings = buildSignalTimings(graph, this.city.traffic.flow);
+    }
     if (!this.lamps) return;
     this.heads.forEach((h, i) => {
-      const light = lightOf(h.group, clock);
+      const light = timedLightOf(h.group, clock, this.timings.get(h.node));
       if (this.shown[i] === light) return;
       this.shown[i] = light;
       this.lamps!.setColorAt(i, new THREE.Color(LIGHT_COLOR[light]));
@@ -68,7 +75,7 @@ export class Signals3D {
         const px = n.x + ux * 0.7 - uy * 0.4;
         const py = n.y + uy * 0.7 + ux * 0.4;
         const h = this.roads.heightOnEdge(edgeId, e.a === nodeId ? 0.02 : 0.98);
-        this.heads.push({ x: px * TILE, y: h, z: py * TILE, group });
+        this.heads.push({ x: px * TILE, y: h, z: py * TILE, group, node: nodeId });
       }
     }
     if (this.heads.length === 0) return;

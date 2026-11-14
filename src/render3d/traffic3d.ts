@@ -11,7 +11,8 @@ import { TILE } from "./terrain3d";
 import type { ZoneCell } from "../sim/zoning";
 import { ZoneType } from "../sim/zoning";
 import { falloff } from "../audio/soundMath";
-import { buildSignalPlan, lightOf, type SignalPlan } from "../sim/signals";
+import { buildSignalPlan, buildSignalTimings, timedLightOf, type SignalPlan, type SignalTimings } from "../sim/signals";
+import { movementOf, turnDelaySeconds, turnLaneOffset, type TurnMovement } from "../sim/trafficReality";
 import type { Person } from "../sim/people";
 import { FacilityType } from "../sim/facilities";
 import { lotCenter } from "../sim/zoning";
@@ -23,8 +24,6 @@ const FLOW_PER_CAR = 5;
 // 道路種別の速度倍率は維持し、細道と高速道路の差は残す。
 const FREE_SPEED = 3.6;
 const MIN_SPEED_RATIO = 0.18;
-/** 車を描くときの、中心線からの距離 (px)。左側通行で、進行方向の左を走る。 */
-const LANE_PX = TILE * 0.14;
 const CAR_COLORS = [0xe8e8ea, 0xd9564a, 0x4a90e2, 0xf2c230, 0x5ec27a, 0x8a8f98];
 const CAPACITY = 6000;
 /** 同じ車線で、車どうしの中心をこのくらい (タイル) 離して置く。 */
@@ -151,6 +150,8 @@ interface Car {
   braking: boolean;
   /** 今、通り抜けている交差点 (ノード)。-1 なら、どこも押さえていない。 */
   claimNode: number;
+  /** 次の交差点での進行方向。車線の選択と右左折時の減速に使う。 */
+  movement: TurnMovement | null;
   /** 運転の個性: 速さの好みと、前の車との間隔 (秒)。 */
   pace: number;
   /** 車の持ち主 (住民の番号)。-1 は持ち主なし (行き先はランダム)。 */
@@ -201,7 +202,11 @@ export class Traffic3D {
   private nodeHolder = new Map<number, Car>();
   /** 信号の計画 (道路が変わったときだけ作り直す)。 */
   private plan: SignalPlan = new Map();
+  /** 交通量に応じた信号時間 (交通量が変わったときに作り直す)。 */
+  private timings: SignalTimings = new Map();
   private planVersion = -1;
+  private timingGraphVersion = -1;
+  private timingTrafficVersion = -1;
   /** 信号の時間 (秒)。ゲームの時間で進む (一時停止中は止まる)。 */
   clock = 0;
   /** 今の時刻 (0〜24)。住民の車は、朝は働き先へ、夜は家へ向かう。 */
@@ -287,6 +292,11 @@ export class Traffic3D {
       this.planVersion = graph.version;
       this.plan = buildSignalPlan(graph);
     }
+    if (graph.version !== this.timingGraphVersion || city.trafficVersion !== this.timingTrafficVersion) {
+      this.timingGraphVersion = graph.version;
+      this.timingTrafficVersion = city.trafficVersion;
+      this.timings = buildSignalTimings(graph, city.traffic.flow);
+    }
     const destKey = `${city.zones.version}:${graph.version}:${city.people.length}`;
     if (destKey !== this.destKey) {
       this.destKey = destKey;
@@ -319,11 +329,11 @@ export class Traffic3D {
       const p = car.p;
       car.ax = a.x + (b.x - a.x) * p;
       car.ay = a.y + (b.y - a.y) * p;
+      const lane = this.lanePos(car);
       const dx = Math.cos(car.heading);
       const dz = Math.sin(car.heading);
-      // 進行方向の左側を走る (y が南向きなので、進行方向 (dx,dz) の左は (dz,-dx))
-      const x = (a.x + (b.x - a.x) * p) * TILE + dz * LANE_PX;
-      const z = (a.y + (b.y - a.y) * p) * TILE - dx * LANE_PX;
+      const x = lane.x * TILE;
+      const z = lane.y * TILE;
       const y = this.roads.heightOnEdge(car.edge, p);
       this.tmpQ.setFromAxisAngle(this.up, -car.heading);
       this.tmpM.compose(new THREE.Vector3(x, y, z), this.tmpQ, new THREE.Vector3(1, 1, 1));
@@ -429,6 +439,8 @@ export class Traffic3D {
       const nd = Math.abs(this.headingOf(next) - car.heading);
       if (Math.min(nd, Math.PI * 2 - nd) > 0.6) vTarget = Math.min(vTarget, 1.8);
     }
+    // 右折・Uターンは対向車の確認に時間がかかるため、交差点直前で減速する。
+    if (distToEnd < 3 && car.movement) vTarget = Math.min(vTarget, FREE_SPEED / (1 + turnDelaySeconds(car.movement) * 0.35));
     // 交差点: 先に着く車がいるなら、手前で止まって譲る (車が交差点の中で重ならないように)
     const patient = car.stall < STALL_SEC;
     if (distToEnd < 3 && distToEnd > 0.5 && ((patient && (this.mustYield(car, distToEnd) || this.junctionHeld(car))) || this.mustSignalStop(car, distToEnd)))
@@ -513,7 +525,9 @@ export class Traffic3D {
 
   /** 車の中心の位置 (タイル、車線の上)。 */
   private lanePos(car: Car): { x: number; y: number } {
-    return lanePoint(car.ax, car.ay, this.laneHeading(car));
+    const edge = this.city.graph.edges.get(car.edge);
+    const extra = edge && car.movement ? turnLaneOffset(car.movement, edge) : 0;
+    return lanePoint(car.ax, car.ay, this.laneHeading(car), extra);
   }
 
   /** 車線の向き。区間の向きと進む向きから決める (車の今の向きは、停車中や曲がり角で、ずれることがあるため使わない)。 */
@@ -585,6 +599,7 @@ export class Traffic3D {
     car.edge = step.edge;
     car.dir = step.dir;
     car.p = step.dir > 0 ? 0 : 1;
+    car.movement = this.nextMovement(car, this.endNode(car));
     // 次の区間へ進んだので、その先の道順が要る (route は次の区間より先の分)
     if (car.route.length === 0 && car.dest !== -1) this.planFrom(car, this.endNode(car));
   }
@@ -623,7 +638,7 @@ export class Traffic3D {
     if (distToEnd <= JUNCTION_COMMIT) return false;
     const group = this.plan.get(this.endNode(car))?.get(car.edge);
     if (group === undefined) return false;
-    const light = lightOf(group, this.clock);
+    const light = timedLightOf(group, this.clock, this.timings.get(this.endNode(car)));
     if (light === "green") return false;
     if (light === "red") return true;
     return distToEnd > (car.speed * car.speed) / (2 * CAR.decel);
@@ -657,6 +672,7 @@ export class Traffic3D {
         car.leaving = true;
         car.dest = exit;
         car.route = routeTo(this.city.graph, this.endNode(car), car.seed, exit);
+        car.movement = this.nextMovement(car, this.endNode(car));
         if (car.route.length > 0 || this.endNode(car) === exit) return;
       }
     }
@@ -678,6 +694,7 @@ export class Traffic3D {
         if (route.length > 0) {
           car.dest = target;
           car.route = route;
+          car.movement = this.nextMovement(car, from);
           return;
         }
       }
@@ -698,6 +715,7 @@ export class Traffic3D {
         if (route.length > 0) {
           car.dest = cand;
           car.route = route;
+          car.movement = this.nextMovement(car, from);
           return;
         }
       }
@@ -706,7 +724,15 @@ export class Traffic3D {
       return;
     }
     car.route = routeTo(this.city.graph, from, car.seed, car.dest);
+    car.movement = this.nextMovement(car, from);
     if (car.route.length === 0 && from !== car.dest) car.dest = -1; // 届かない場所は、選び直す
+  }
+
+  /** 車が次に交差点を曲がる向きを求める。次の区間がなければ直進扱い。 */
+  private nextMovement(car: Car, node: number): TurnMovement | null {
+    const next = car.route[0];
+    if (!next) return null;
+    return movementOf(this.city.graph, node, { edge: car.edge, dir: car.dir }, next);
   }
 
   /** 住民の買い物先を、商業施設の中から毎回同じ規則で選ぶ。 */
@@ -848,6 +874,7 @@ export class Traffic3D {
         uturn: -1,
         braking: false,
         claimNode: -1,
+        movement: null,
         owner: this.ownerPool.length > 0 ? this.ownerPool[Math.floor(hash2(this.spawnSerial, e.edge, 21) * this.ownerPool.length)]!.id : -1,
         pace: driverOf(hash2(this.spawnSerial, e.edge, 11)).pace,
         stall: 0,

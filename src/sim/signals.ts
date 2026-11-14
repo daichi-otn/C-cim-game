@@ -1,4 +1,5 @@
 import type { RoadGraph } from "./roadGraph";
+import { LANE } from "./roadTypes";
 
 /**
  * 交差点の信号 (純粋な計算)。3 本以上の道路が集まる交差点には、すべて信号がある。
@@ -11,11 +12,23 @@ export const GREEN_SEC = 11;
 export const YELLOW_SEC = 2;
 /** 1 周期 (両方の組が 1 回ずつ青になる)。 */
 export const CYCLE_SEC = 2 * (GREEN_SEC + YELLOW_SEC);
+export const MIN_ADAPTIVE_GREEN_SEC = 7;
+export const MAX_ADAPTIVE_GREEN_SEC = 18;
 
 export type Light = "green" | "yellow" | "red";
 
 /** 交差点ごとに、そこにつながる道路がどの組 (0 = 東西, 1 = 南北) か。信号のない交差点は含めない。 */
 export type SignalPlan = Map<number, Map<number, number>>;
+
+/** 交差点ごとの交通量に応じた信号時間。保存せず、道路と交通量から毎回求める。 */
+export interface SignalTiming {
+  green: [number, number];
+  cycle: number;
+  /** バスレーンがある組。公共交通の優先配分を示す。 */
+  priorityGroup?: number;
+}
+
+export type SignalTimings = Map<number, SignalTiming>;
 
 /** 道路の接続数から交差点の種類を数える。信号は3方向以上、十字以上は4方向以上。 */
 export function intersectionStats(graph: RoadGraph): { t: number; cross: number; signal: number } {
@@ -64,5 +77,46 @@ export function lightOf(group: number, t: number): Light {
   const rel = (c - start + CYCLE_SEC) % CYCLE_SEC;
   if (rel < GREEN_SEC) return "green";
   if (rel < GREEN_SEC + YELLOW_SEC) return "yellow";
+  return "red";
+}
+
+/** 交差点の交通量から、青時間を組ごとに配分する。最低時間を確保して閑散側も進める。 */
+export function buildSignalTimings(graph: RoadGraph, flow: ReadonlyMap<number, number>): SignalTimings {
+  const plan = buildSignalPlan(graph);
+  const timings: SignalTimings = new Map();
+  for (const [node, approaches] of plan) {
+    const demand: [number, number] = [0, 0];
+    for (const [edge, group] of approaches) demand[group]! += Math.max(0, flow.get(edge) ?? 0);
+    const priorityGroup = [...approaches].find(([edge]) => (graph.edges.get(edge)?.lanes ?? 0) & LANE.Bus)?.[1];
+    const baseTotal = demand[0] + demand[1];
+    if (priorityGroup !== undefined && baseTotal > 0) demand[priorityGroup]! += Math.max(1, baseTotal * 0.15);
+    const total = demand[0] + demand[1];
+    if (total <= 0) {
+      timings.set(node, { green: [GREEN_SEC, GREEN_SEC], cycle: CYCLE_SEC, priorityGroup });
+      continue;
+    }
+    const available = 2 * GREEN_SEC;
+    const first = Math.max(MIN_ADAPTIVE_GREEN_SEC, Math.min(MAX_ADAPTIVE_GREEN_SEC, (available * demand[0]) / total));
+    const second = Math.max(MIN_ADAPTIVE_GREEN_SEC, Math.min(MAX_ADAPTIVE_GREEN_SEC, available - first));
+    timings.set(node, { green: [first, second], cycle: first + second + 2 * YELLOW_SEC, priorityGroup });
+  }
+  return timings;
+}
+
+/** 交通量で調整された信号の色。青時間の後ろに黄色・全赤を置く。 */
+export function timedLightOf(group: number, t: number, timing?: SignalTiming): Light {
+  if (!timing) return lightOf(group, t);
+  const c = ((t % timing.cycle) + timing.cycle) % timing.cycle;
+  const first = timing.green[0];
+  const secondStart = first + YELLOW_SEC;
+  const secondEnd = secondStart + timing.green[1];
+  if (group === 0) {
+    if (c < first) return "green";
+    if (c < first + YELLOW_SEC) return "yellow";
+    return "red";
+  }
+  if (c < secondStart) return "red";
+  if (c < secondEnd) return "green";
+  if (c < secondEnd + YELLOW_SEC) return "yellow";
   return "red";
 }

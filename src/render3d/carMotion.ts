@@ -114,8 +114,9 @@ export function overlapsInLane(mx: number, my: number, h: number, ox: number, oy
 }
 
 /** 車線の上の、車の中心の位置 (タイル)。(ax,ay) は道路の中心線の上の点、h は車線の向き。左側を走る。 */
-export function lanePoint(ax: number, ay: number, h: number): { x: number; y: number } {
-  return { x: ax + Math.sin(h) * LANE_OFFSET, y: ay - Math.cos(h) * LANE_OFFSET };
+export function lanePoint(ax: number, ay: number, h: number, extraOffset = 0): { x: number; y: number } {
+  const offset = LANE_OFFSET + extraOffset;
+  return { x: ax + Math.sin(h) * offset, y: ay - Math.cos(h) * offset };
 }
 
 /**
