@@ -124,6 +124,10 @@ export interface CityData {
   welfarePolicy?: boolean;
   /** 災害対策条例。旧データでは無効。 */
   disasterPreparedness?: boolean;
+  /** 教育・医療・交通安全の政策レベル (0〜2)。旧データでは無効。 */
+  educationPolicy?: number;
+  medicalPolicy?: number;
+  trafficPolicy?: number;
   /** 災害の設定と進行中の火災。昔のデータでは災害なし。 */
   disastersEnabled?: boolean;
   fire?: { x: number; y: number; started: number } | null;
@@ -209,6 +213,9 @@ export class City {
   loanBalance = 0;
   welfarePolicy = false;
   disasterPreparedness = false;
+  educationPolicy = 0;
+  medicalPolicy = 0;
+  trafficPolicy = 0;
   disastersEnabled = false;
   fire: { x: number; y: number; started: number } | null = null;
   outage: { facilityId: number; started: number } | null = null;
@@ -229,7 +236,7 @@ export class City {
   /** 直近 1 か月の収支。まだ月が終わっていなければ 0。 */
   lastMonth: MonthReport = { income: 0, expense: 0 };
   /** 今回の実行中に締めた月の内訳。古いセーブには内訳がない。 */
-  lastBudget: { roads: number; pensions: number; facilities: number; interest: number; welfare: number; disasterPreparedness: number } | null = null;
+  lastBudget: { roads: number; pensions: number; facilities: number; interest: number; welfare: number; disasterPreparedness: number; education: number; medical: number; traffic: number } | null = null;
   /** 地価 (0〜1) の、区画ごとの値 (キーは "x,y")。道路・サービス・環境・施設から毎日求め直す。保存しない。 */
   landValues = new Map<string, number>();
   /** 建物が建っている場所の地価の平均から決まる、税の上乗せの割合 (0〜LAND_TAX_BONUS)。保存しない。 */
@@ -333,6 +340,9 @@ export class City {
       loanBalance: this.loanBalance,
       welfarePolicy: this.welfarePolicy,
       disasterPreparedness: this.disasterPreparedness,
+      educationPolicy: this.educationPolicy,
+      medicalPolicy: this.medicalPolicy,
+      trafficPolicy: this.trafficPolicy,
       disastersEnabled: this.disastersEnabled,
       fire: this.fire ? { ...this.fire } : null,
       outage: this.outage ? { ...this.outage } : null,
@@ -367,6 +377,7 @@ export class City {
     if (d.mapSize !== undefined && !["small", "medium", "large", "country"].includes(d.mapSize)) throw new Error("マップサイズが不正です");
     if (d.welfarePolicy !== undefined && typeof d.welfarePolicy !== "boolean") throw new Error("条例の設定が不正です");
     if (d.disasterPreparedness !== undefined && typeof d.disasterPreparedness !== "boolean") throw new Error("条例の設定が不正です");
+    for (const v of [d.educationPolicy, d.medicalPolicy, d.trafficPolicy]) if (v !== undefined && (!Number.isInteger(v) || v < 0 || v > 2)) throw new Error("条例の設定が不正です");
     if (d.disastersEnabled !== undefined && typeof d.disastersEnabled !== "boolean") throw new Error("災害の設定が不正です");
     if (d.fire != null && (typeof d.fire !== "object" || !isInt(d.fire.x, -1e9, 1e9) || !isInt(d.fire.y, -1e9, 1e9) || !isInt(d.fire.started, 0, d.day) || !d.disastersEnabled)) throw new Error("火災のデータが不正です");
     if (d.outage != null && (typeof d.outage !== "object" || !isInt(d.outage.facilityId, 1) || !isInt(d.outage.started, 0, d.day) || !d.disastersEnabled)) throw new Error("停電のデータが不正です");
@@ -443,6 +454,9 @@ export class City {
     city.loanBalance = d.loanBalance ?? 0;
     city.welfarePolicy = d.welfarePolicy ?? false;
     city.disasterPreparedness = d.disasterPreparedness ?? false;
+    city.educationPolicy = d.educationPolicy ?? 0;
+    city.medicalPolicy = d.medicalPolicy ?? 0;
+    city.trafficPolicy = d.trafficPolicy ?? 0;
     city.disastersEnabled = d.disastersEnabled ?? false;
     city.fire = d.fire ? { ...d.fire } : null;
     city.outage = d.outage ? { ...d.outage } : null;
@@ -1225,13 +1239,15 @@ export class City {
       } else {
         this.health = this.recountCachedHealth();
       }
-      this.happiness = Math.max(0, this.happiness - HEALTH_HAPPINESS_PENALTY * this.health.meanRisk);
+      const medicalFactor = [1, 0.82, 0.65][this.medicalPolicy] ?? 1;
+      this.happiness = Math.max(0, this.happiness - HEALTH_HAPPINESS_PENALTY * this.health.meanRisk * medicalFactor);
       if (this.welfarePolicy && this.zones.totals().population > 0) this.happiness = Math.min(1, this.happiness + 0.1);
+      if (this.educationPolicy > 0 && this.children > 0) this.happiness = Math.min(1, this.happiness + 0.025 * this.educationPolicy);
     }
     this.calcLand();
     const totals = this.zones.totals();
     // 渋滞がひどいと、住みたい人も店や工場を出したい人も減る
-    const jam = trafficDemandPenalty(this.traffic);
+    const jam = trafficDemandPenalty(this.traffic) * ([1, 0.85, 0.7][this.trafficPolicy] ?? 1);
     const d = calcDemand(totals, this._taxRate, this.happiness);
     const sd = { ...SEASON_DEMAND[this.season] };
     sd.o += this.higherEducation; // 高校・大学が届いている街には、オフィスが集まる
@@ -1585,9 +1601,13 @@ export class City {
     const interest = Math.round(this.loanBalance * 0.01);
     const welfare = this.welfarePolicy ? Math.round(this.zones.totals().population * 1000) : 0;
     const disasterPreparedness = this.disasterPreparedness ? Math.round(this.zones.totals().population * 500) : 0;
-    const expense = roads + pensions + facilities + interest + welfare + disasterPreparedness;
+    const population = this.zones.totals().population;
+    const education = Math.round(this.children * [0, 800, 1600][this.educationPolicy]!);
+    const medical = Math.round(population * [0, 400, 900][this.medicalPolicy]!);
+    const traffic = Math.round(population * [0, 250, 550][this.trafficPolicy]!);
+    const expense = roads + pensions + facilities + interest + welfare + disasterPreparedness + education + medical + traffic;
     if (!this.devMode) this.money += income - expense; // 開発者モードでは、収支はお金に影響しない (収支の表示だけ更新する)
     this.lastMonth = { income, expense };
-    this.lastBudget = { roads, pensions, facilities, interest, welfare, disasterPreparedness };
+    this.lastBudget = { roads, pensions, facilities, interest, welfare, disasterPreparedness, education, medical, traffic };
   }
 }

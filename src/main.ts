@@ -42,7 +42,7 @@ import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.43";
+const VERSION = "0.95.44";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -872,6 +872,9 @@ async function main() {
     $("policy-tax").textContent = `${Math.round(g.city.taxRate * 100)}%`;
     ($("policy-welfare") as HTMLInputElement).checked = g.city.welfarePolicy;
     ($("policy-disaster") as HTMLInputElement).checked = g.city.disasterPreparedness;
+    ($("policy-education") as HTMLSelectElement).value = String(g.city.educationPolicy);
+    ($("policy-medical") as HTMLSelectElement).value = String(g.city.medicalPolicy);
+    ($("policy-traffic") as HTMLSelectElement).value = String(g.city.trafficPolicy);
   };
 
   const mapsEl = $("maps");
@@ -995,7 +998,7 @@ async function main() {
     $("menu-japan-overview").classList.toggle("hidden", g.city.seed !== REGION_SEEDS.japan);
     const { lastMonth, lastBudget } = g.city;
     $("menu-budget").textContent = lastBudget
-      ? `税収 ${yen(lastMonth.income)} / 道路 ${yen(lastBudget.roads)} / 年金 ${yen(lastBudget.pensions)} / 施設 ${yen(lastBudget.facilities)} / 利息 ${yen(lastBudget.interest)} / 暮らしの支援 ${yen(lastBudget.welfare)} / 災害対策 ${yen(lastBudget.disasterPreparedness)} / 収支 ${yen(lastMonth.income - lastMonth.expense)}（地区の財布から支払った分は含みません）`
+      ? `税収 ${yen(lastMonth.income)} / 道路 ${yen(lastBudget.roads)} / 年金 ${yen(lastBudget.pensions)} / 施設 ${yen(lastBudget.facilities)} / 利息 ${yen(lastBudget.interest)} / 暮らしの支援 ${yen(lastBudget.welfare)} / 災害対策 ${yen(lastBudget.disasterPreparedness)} / 教育 ${yen(lastBudget.education)} / 医療 ${yen(lastBudget.medical)} / 交通 ${yen(lastBudget.traffic)} / 収支 ${yen(lastMonth.income - lastMonth.expense)}（地区の財布から支払った分は含みません）`
       : "内訳は次の月の決算後に表示されます。";
     updateLoanMenu();
     updateOutageMenu();
@@ -1183,6 +1186,15 @@ async function main() {
     g.city.refresh();
     updatePolicyMenu();
   });
+  for (const [id, key] of [["policy-education", "educationPolicy"], ["policy-medical", "medicalPolicy"], ["policy-traffic", "trafficPolicy"]] as const) {
+    $(id).addEventListener("change", (event) => {
+      if (!g) return;
+      g.city[key] = Math.max(0, Math.min(2, Number((event.target as HTMLSelectElement).value))) as 0 | 1 | 2;
+      g.city.refresh();
+      updatePolicyMenu();
+      reportMenu("政策を変更しました。効果と費用は次の更新・月次決算に反映されます。");
+    });
+  }
   $("policy-tax-down").addEventListener("click", () => {
     if (!g) return;
     g.city.setTaxRate(g.city.taxRate - 0.01);
