@@ -110,6 +110,9 @@ export interface HistoryPoint {
   demandI: number;
   demandO: number;
   risk: number;
+  healthRisk?: number;
+  educationCoverage?: number;
+  congestion?: number;
 }
 
 export interface PolicyHistoryPoint {
@@ -445,7 +448,7 @@ export class City {
     }
     city.nextIndustryId = Math.max(1, ...city.industries.map((industry) => industry.id + 1));
     for (const point of d.history ?? []) {
-      if (!Number.isInteger(point.day) || point.day < 0 || !Number.isFinite(point.population) || !Number.isFinite(point.money) || ![point.demandR, point.demandC, point.demandI, point.demandO, point.risk].every(Number.isFinite)) throw new Error("統計履歴のデータが不正です");
+      if (!Number.isInteger(point.day) || point.day < 0 || !Number.isFinite(point.population) || !Number.isFinite(point.money) || ![point.demandR, point.demandC, point.demandI, point.demandO, point.risk].every(Number.isFinite) || [point.healthRisk, point.educationCoverage, point.congestion].some((v) => v !== undefined && !Number.isFinite(v))) throw new Error("統計履歴のデータが不正です");
       city.history.push({ ...point });
     }
     if (city.history.length > 24) city.history.splice(0, city.history.length - 24);
@@ -1379,7 +1382,7 @@ export class City {
     if (this.day % DAYS_PER_MONTH === 0) {
       this.closeMonth();
       const t = this.zones.totals();
-      this.history.push({ day: this.day, population: t.population, money: this.money, demandR: this.demand.r, demandC: this.demand.c, demandI: this.demand.i, demandO: this.demand.o, risk: this.health.meanRisk });
+      this.history.push({ day: this.day, population: t.population, money: this.money, demandR: this.demand.r, demandC: this.demand.c, demandI: this.demand.i, demandO: this.demand.o, risk: this.health.meanRisk, healthRisk: this.health.meanRisk, educationCoverage: this.coverage.education.total > 0 ? this.coverage.education.covered / this.coverage.education.total : 0, congestion: this.traffic.avgCongestion });
       if (this.history.length > 24) this.history.shift();
     }
   }

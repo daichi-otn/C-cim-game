@@ -39,10 +39,11 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
+import { EDUCATION_NAMES } from "./sim/people";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.47";
+const VERSION = "0.95.48";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -909,6 +910,12 @@ async function main() {
     $("menu-policy-history").textContent = history.length === 0
       ? "変更履歴: まだありません"
       : `変更履歴（${history.length}件）\n${history.map((p) => `第${Math.floor(p.day / 360) + 1}年${Math.floor((p.day % 360) / 30) + 1}月: 税${Math.round(p.taxRate * 100)}% / 教育${levelName(p.education)} / 医療${levelName(p.medical)} / 交通${levelName(p.traffic)} / 暮らし${p.welfare ? "有" : "無"} / 防災${p.disaster ? "有" : "無"}`).join("\n")}`;
+    const educationCosts = [0, children * 800, children * 1600];
+    const medicalCosts = [0, population * 400, population * 900];
+    const trafficCosts = [0, population * 250, population * 550];
+    const points = city.history.slice(-8);
+    const trend = points.length === 0 ? "月次推移: まだありません" : `月次推移（左から古い月）\n健康 ${points.map((p) => bar(p.healthRisk ?? p.risk, 1)).join(" ")}\n教育 ${points.map((p) => bar(p.educationCoverage ?? 0, 1)).join(" ")}\n交通 ${points.map((p) => bar(p.congestion ?? 0, 1)).join(" ")}`;
+    $("menu-policy-compare").textContent = `${trend}\n\n政策比較（費用 / 効果）\n教育 なし ${yen(educationCosts[0]!)}・基本 ${yen(educationCosts[1]!)}・充実 ${yen(educationCosts[2]!)} / 幸福度 +0・+2.5・+5%\n医療 なし ${yen(medicalCosts[0]!)}・基本 ${yen(medicalCosts[1]!)}・充実 ${yen(medicalCosts[2]!)} / 健康影響 -0・18・35%\n交通 なし ${yen(trafficCosts[0]!)}・基本 ${yen(trafficCosts[1]!)}・充実 ${yen(trafficCosts[2]!)} / 渋滞影響 -0・15・30%`;
   }
 
   const mapsEl = $("maps");
@@ -1104,7 +1111,9 @@ async function main() {
     const list = document.createElement("div"); list.className = "citizen-list"; citizenBox.append(list);
     for (const p of g.city.people.slice(0, 8)) {
       const b = document.createElement("button"); b.className = "btn citizen";
-      b.textContent = `#${p.id} ${Math.floor(p.ageDays / 360)}歳`;
+      const life = g.city.personLife(p);
+      b.style.cssText = "white-space:pre-line;text-align:left;max-width:100%;line-height:1.6;overflow-wrap:anywhere";
+      b.textContent = `#${p.id} ${Math.floor(p.ageDays / 365)}歳・${life.occupation}\n月収 ${yen(life.income)} / 生活費 ${yen(life.livingCost)} / 差引 ${yen(life.balance)}\n教育 ${EDUCATION_NAMES[life.education]}${life.attendingSchool ? "（通学中）" : ""} / 健康 ${life.health}\n通勤（片道目安） ${life.commuteMinutes === null ? "道路網未接続" : `${life.commuteMinutes}分`} / 買い物 ${life.shopping}\n満足度 ${Math.round(life.satisfaction * 100)}%`;
       b.title = `自宅 (${p.home[0]},${p.home[1]})${p.work ? `・職場 (${p.work[0]},${p.work[1]})` : "・無職"}`;
       b.addEventListener("click", () => { camera.x = (p.home[0] + 0.5) * TILE_PX; camera.y = (p.home[1] + 0.5) * TILE_PX; showToast(`住民 #${p.id} の自宅を表示しました`); });
       list.append(b);
@@ -1214,6 +1223,7 @@ async function main() {
     g.city.recordPolicyChange();
     g.city.refresh();
     updatePolicyMenu();
+    reportMenu("暮らしの支援を変更しました。効果と費用は次の更新・月次決算に反映されます。");
   });
   $("policy-disaster").addEventListener("change", (event) => {
     if (!g) return;
@@ -1221,6 +1231,7 @@ async function main() {
     g.city.recordPolicyChange();
     g.city.refresh();
     updatePolicyMenu();
+    reportMenu("災害対策を変更しました。効果と費用は次の更新・月次決算に反映されます。");
   });
   for (const [id, key] of [["policy-education", "educationPolicy"], ["policy-medical", "medicalPolicy"], ["policy-traffic", "trafficPolicy"]] as const) {
     $(id).addEventListener("change", (event) => {
@@ -1237,12 +1248,14 @@ async function main() {
     g.city.setTaxRate(g.city.taxRate - 0.01);
     g.city.recordPolicyChange();
     updatePolicyMenu();
+    reportMenu("市の税率を変更しました。次の月次決算から反映されます。");
   });
   $("policy-tax-up").addEventListener("click", () => {
     if (!g) return;
     g.city.setTaxRate(g.city.taxRate + 0.01);
     g.city.recordPolicyChange();
     updatePolicyMenu();
+    reportMenu("市の税率を変更しました。次の月次決算から反映されます。");
   });
   $("transit-add-bus").addEventListener("click", () => {
     if (!g) return;
