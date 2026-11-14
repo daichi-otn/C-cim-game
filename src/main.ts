@@ -42,7 +42,7 @@ import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.45";
+const VERSION = "0.95.46";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -875,7 +875,36 @@ async function main() {
     ($("policy-education") as HTMLSelectElement).value = String(g.city.educationPolicy);
     ($("policy-medical") as HTMLSelectElement).value = String(g.city.medicalPolicy);
     ($("policy-traffic") as HTMLSelectElement).value = String(g.city.trafficPolicy);
+    updatePolicyReport();
   };
+  const levelName = (level: number) => level === 2 ? "充実" : level === 1 ? "基本" : "なし";
+  const bar = (value: number, max: number) => {
+    const n = Math.max(0, Math.min(8, Math.round((value / Math.max(1, max)) * 8)));
+    return "█".repeat(n).padEnd(8, "·");
+  };
+  function updatePolicyReport(): void {
+    if (!g) return;
+    const city = g.city;
+    const population = city.zones.totals().population;
+    const children = city.children;
+    const education = Math.round(children * [0, 800, 1600][city.educationPolicy]!);
+    const medical = Math.round(population * [0, 400, 900][city.medicalPolicy]!);
+    const traffic = Math.round(population * [0, 250, 550][city.trafficPolicy]!);
+    const welfare = city.welfarePolicy ? population * 1000 : 0;
+    const disaster = city.disasterPreparedness ? population * 500 : 0;
+    const total = education + medical + traffic + welfare + disaster;
+    const maxCost = Math.max(1, population * 2500);
+    const lines = [
+      `対象人口 ${population.toLocaleString("ja-JP")}人 / 子ども ${children.toLocaleString("ja-JP")}人 / 幸福度 ${Math.round(city.happiness * 100)}%`,
+      `教育 ${levelName(city.educationPolicy)}  月${yen(education)}  効果: 幸福度 +${city.educationPolicy * 2.5}%`,
+      `医療 ${levelName(city.medicalPolicy)}  月${yen(medical)}  効果: 健康悪化の影響 -${city.medicalPolicy === 2 ? 35 : city.medicalPolicy === 1 ? 18 : 0}%`,
+      `交通 ${levelName(city.trafficPolicy)}  月${yen(traffic)}  効果: 渋滞の需要影響 -${city.trafficPolicy === 2 ? 30 : city.trafficPolicy === 1 ? 15 : 0}%`,
+      `暮らし ${city.welfarePolicy ? "有効" : "なし"}  月${yen(welfare)} / 防災 ${city.disasterPreparedness ? "有効" : "なし"}  月${yen(disaster)}`,
+      `政策合計 月${yen(total)}  負担目安 ${bar(total, maxCost)} ${Math.round((total / maxCost) * 100)}%`,
+      city.lastBudget ? `前回決算の政策費 ${yen(city.lastBudget.welfare + city.lastBudget.disasterPreparedness + city.lastBudget.education + city.lastBudget.medical + city.lastBudget.traffic)}` : "前回決算: まだありません",
+    ];
+    $("menu-policy-report").textContent = lines.join("\n");
+  }
 
   const mapsEl = $("maps");
   const titleSelection = $("title-selection");
