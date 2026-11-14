@@ -40,11 +40,12 @@ import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, dens
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 import { EDUCATION_NAMES } from "./sim/people";
+import { CRISIS_KIND_NAMES, RECOVERY_PRIORITY_NAMES, type RecoveryPriority } from "./sim/crisis";
 import type { MapSize } from "./sim/mapSize";
 import { PRODUCT_NAMES, RAW_MATERIAL_NAMES, type Product, type RawMaterial } from "./sim/primaryIndustry";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.96.1";
+const VERSION = "0.96.2";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -1056,6 +1057,7 @@ async function main() {
     updateOutageMenu();
     updateDamageMenu();
     updateRoadDamageMenu();
+    updateCrisisMenu();
     updateProgressMenu();
     updateTransitMenu();
     updateParkingMenu();
@@ -1216,7 +1218,7 @@ async function main() {
       button.disabled = !city.canAfford(2_000_000);
       button.addEventListener("click", () => {
         if (!city.repairFacilityDamage(id)) return;
-        updateDamageMenu(); updateOutageMenu(); updateLoanMenu(); updateRoadDamageMenu();
+        updateDamageMenu(); updateOutageMenu(); updateLoanMenu(); updateRoadDamageMenu(); updateCrisisMenu();
       });
       row.append(label, button); list.appendChild(row);
     }
@@ -1236,12 +1238,90 @@ async function main() {
       button.disabled = !city.canAfford(1_000_000);
       button.addEventListener("click", () => {
         if (!city.repairRoadDamage(id)) return;
-        updateRoadDamageMenu(); updateDamageMenu(); updateOutageMenu(); updateLoanMenu();
+        updateRoadDamageMenu(); updateDamageMenu(); updateOutageMenu(); updateLoanMenu(); updateCrisisMenu();
       });
       row.append(label, button); list.appendChild(row);
     }
   }
-  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) { updateOutageMenu(); updateDamageMenu(); updateLoanMenu(); updateRoadDamageMenu(); } });
+  function updateCrisisMenu() {
+    if (!g) return;
+    const city = g.city;
+    const status = city.crisisStatus();
+    const effect = city.disasterPolicyEffect();
+    const statusEl = $("menu-crisis-status");
+    if (!status.kind) {
+      statusEl.textContent = "現在、対応中の災害はありません。災害が発生すると、ここから避難・物資・復旧優先度を管理できます。";
+    } else {
+      const e = status.evacuation;
+      const r = status.relief;
+      const c = status.coordination;
+      statusEl.textContent = `${CRISIS_KIND_NAMES[status.kind]}が発生中（${Math.max(0, city.day - (status.started ?? city.day))}日目）。` +
+        `避難 ${e.evacuatedResidents.toLocaleString("ja-JP")} / ${e.affectedResidents.toLocaleString("ja-JP")}人` +
+        `、物資 ${r.delivered.toLocaleString("ja-JP")} / ${r.required.toLocaleString("ja-JP")}単位` +
+        `、連携 消防${c.fire ? "○" : "×"}・警察${c.police ? "○" : "×"}・病院${c.hospital ? "○" : "×"}（${Math.round(c.score * 100)}%）`;
+    }
+    const evacuation = city.crisisStatus().evacuation;
+    $<HTMLButtonElement>("crisis-evacuate").disabled = !status.kind || city.devMode || !city.disastersEnabled;
+    $<HTMLButtonElement>("crisis-cancel-evacuation").disabled = !city.crisis.evacuation;
+    const reliefUnits = Math.max(1, Math.min(10_000, Math.floor(Number(($<HTMLInputElement>("crisis-relief-units")).value) || 1)));
+    $<HTMLButtonElement>("crisis-relief").disabled = !status.kind || !city.canAfford(reliefUnits * 100_000);
+    $("menu-crisis-policy").textContent = effect.enabled
+      ? `防災条例: 有効（月${yen(effect.monthlyCostPerResident)} / 住民1人）。被害発生率 ${Math.round(effect.damageChanceReduction * 100)}%減、復旧 ${effect.recoveryDaysShortened}日短縮、火災対応 ${effect.fireResponseDaysShortened}日短縮、避難準備 +${Math.round(effect.evacuationReadiness * 100)}%、物資必要量 ${Math.round(effect.reliefNeedReduction * 100)}%減。避難所容量 ${evacuation.shelterCapacity.toLocaleString("ja-JP")}人。`
+      : "防災条例: 無効（月額負担なし）。有効にすると被害軽減・復旧短縮・避難準備・救援物資の必要量に反映されます。";
+    const list = $("crisis-recovery-list");
+    list.textContent = "";
+    const queue = city.recoveryQueue();
+    if (queue.length === 0) {
+      list.textContent = "復旧待ちの施設・道路はありません。";
+      return;
+    }
+    const heading = document.createElement("div");
+    heading.textContent = "復旧優先順位（変更すると自動復旧予定に反映）";
+    list.append(heading);
+    for (const target of queue) {
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:6px 0";
+      const until = target.kind === "facility" ? city.facilityDamage.get(target.id) : city.roadDamage.get(target.id);
+      const label = document.createElement("span");
+      if (target.kind === "facility") {
+        const f = city.facilities.get(target.id);
+        label.textContent = `${f ? FACILITY_SPECS[f.type].name : "施設"} #${target.id} / 残り ${Math.max(0, (until ?? city.day) - city.day)}日`;
+      } else {
+        label.textContent = `道路区間 #${target.id} / 残り ${Math.max(0, (until ?? city.day) - city.day)}日`;
+      }
+      label.style.flex = "1 1 180px";
+      const select = document.createElement("select");
+      for (const priority of ["critical", "high", "normal"] as RecoveryPriority[]) {
+        const option = document.createElement("option"); option.value = priority; option.textContent = RECOVERY_PRIORITY_NAMES[priority]; option.selected = priority === target.priority; select.append(option);
+      }
+      const button = document.createElement("button");
+      button.className = "btn"; button.textContent = "設定";
+      button.addEventListener("click", () => {
+        if (city.setRecoveryPriority(target, select.value as RecoveryPriority)) {
+          updateCrisisMenu(); updateDamageMenu(); updateRoadDamageMenu();
+        }
+      });
+      row.append(label, select, button); list.append(row);
+    }
+  }
+  $("crisis-evacuate").addEventListener("click", () => {
+    if (!g) return;
+    if (g.city.orderEvacuation()) { updateCrisisMenu(); reportMenu("避難指示を出しました。避難所の容量と連携状況を確認してください。"); }
+    else reportMenu("対応中の災害がないか、災害設定を確認してください。", true);
+  });
+  $("crisis-cancel-evacuation").addEventListener("click", () => {
+    if (!g) return;
+    if (g.city.cancelEvacuation()) { updateCrisisMenu(); reportMenu("避難指示を解除しました"); }
+  });
+  $("crisis-relief").addEventListener("click", () => {
+    if (!g) return;
+    const input = $<HTMLInputElement>("crisis-relief-units");
+    const units = Math.max(1, Math.min(10_000, Math.floor(Number(input.value) || 1)));
+    if (g.city.deliverReliefSupplies(units)) { updateCrisisMenu(); updateLoanMenu(); reportMenu(`救援物資を${units}単位投入しました`); }
+    else reportMenu("対応中の災害がないか、または資金が足りません", true);
+  });
+  $("crisis-relief-units").addEventListener("input", updateCrisisMenu);
+  $("repair-outage").addEventListener("click", () => { if (g?.city.repairOutage()) { updateOutageMenu(); updateDamageMenu(); updateLoanMenu(); updateRoadDamageMenu(); updateCrisisMenu(); } });
   $("loan-borrow").addEventListener("click", () => { if (g?.city.borrowLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); updateRoadDamageMenu(); } });
   $("loan-repay").addEventListener("click", () => { if (g?.city.repayLoan()) { updateLoanMenu(); updateDamageMenu(); updateOutageMenu(); updateRoadDamageMenu(); } });
   $("policy-welfare").addEventListener("change", (event) => {
@@ -1258,7 +1338,8 @@ async function main() {
     g.city.recordPolicyChange();
     g.city.refresh();
     updatePolicyMenu();
-    reportMenu("災害対策を変更しました。効果と費用は次の更新・月次決算に反映されます。");
+    updateCrisisMenu();
+    reportMenu("防災条例を変更しました。被害軽減・避難・復旧の指標へ反映します。");
   });
   for (const [id, key] of [["policy-education", "educationPolicy"], ["policy-medical", "medicalPolicy"], ["policy-traffic", "trafficPolicy"]] as const) {
     $(id).addEventListener("change", (event) => {

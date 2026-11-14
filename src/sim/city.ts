@@ -50,6 +50,24 @@ import { PRIMARY_NAMES, PRIMARY_RESOURCE, industryFlow, primaryOutput, type Prim
 import { simulateLogistics, type LogisticsStats } from "./logistics";
 import { PARKING_CAPACITY, PARKING_COST, parkingUsed, type ParkingLot } from "./parking";
 import { isInMap, type MapSize } from "./mapSize";
+import {
+  crisisPolicyEffect,
+  coordinationScore,
+  emptyCrisisData,
+  evacuationStats,
+  recoveryDaysFor,
+  recoveryPriorityOf,
+  reliefStats,
+  validateCrisisData,
+  type CrisisData,
+  type CrisisKind,
+  type CrisisPolicyEffect,
+  type CoordinationStatus,
+  type EvacuationStats,
+  type RecoveryPriority,
+  type RecoveryPriorityEntry,
+  type ReliefStats,
+} from "./crisis";
 
 /** 建物の一辺の最大タイル数 (保存データの検査用)。 */
 const MAX_LOT_SIDE = 6;
@@ -151,6 +169,8 @@ export interface CityData {
   /** 地震で損傷した施設のIDと、自動復旧する日。 */
   facilityDamage?: [number, number][];
   roadDamage?: [number, number][];
+  /** M23 の避難・救援物資・復旧優先度。旧セーブでは省略される。 */
+  crisis?: CrisisData;
   lastMonth: MonthReport;
   /** 建物が建つ判定に使う乱数の状態。 */
   rngState: number;
@@ -238,6 +258,8 @@ export class City {
   quake: { x: number; y: number; started: number } | null = null;
   readonly facilityDamage = new Map<number, number>();
   readonly roadDamage = new Map<number, number>();
+  /** 避難・救援物資・復旧優先度。導出できない管理状態だけを保存する。 */
+  crisis: CrisisData = emptyCrisisData();
   /**
    * 開発者モード: 街の条件をすべて無視する (供給・ごみ・公共サービス・外部接続・環境と健康・渋滞・需要・道路の太さ・お金)。
    * 見た目や動きの確認用。街のデータには保存しない (画面の設定で、新しい街・読み込んだ街にも引き継ぐ)。
@@ -339,6 +361,13 @@ export class City {
       if (until === undefined) return;
       this.roadDamage.delete(oldId);
       for (const id of newIds) this.roadDamage.set(id, until);
+      const priority = (this.crisis.priorities ?? []).find((entry) => entry.kind === "road" && entry.id === oldId);
+      if (priority) {
+        this.crisis.priorities = [
+          ...(this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "road" && entry.id === oldId)),
+          ...newIds.map((id) => ({ kind: "road" as const, id, priority: priority.priority })),
+        ];
+      }
     };
     this.zones = new ZoneMap(seed);
     this.rng = createStatefulRng(seed, rngState);
@@ -366,6 +395,11 @@ export class City {
       quake: this.quake ? { ...this.quake } : null,
       facilityDamage: [...this.facilityDamage],
       roadDamage: [...this.roadDamage].filter(([id]) => this.graph.edges.has(id)),
+      crisis: {
+        evacuation: this.crisis.evacuation ? { ...this.crisis.evacuation } : null,
+        relief: this.crisis.relief ? { ...this.crisis.relief } : null,
+        priorities: this.crisis.priorities?.map((entry) => ({ ...entry })) ?? [],
+      },
       lastMonth: { ...this.lastMonth },
       rngState: this.rng.state(),
       nextFacilityId: this.nextFacilityId,
@@ -408,6 +442,7 @@ export class City {
       if (target && (!FACILITY_SPECS[target.type as FacilityType] || FACILITY_SPECS[target.type as FacilityType].service !== "power")) throw new Error("停電の対象が不正です");
     }
     const city = new City(d.seed, RoadGraph.fromData(d.graph), d.rngState, d.mapSize ?? "medium");
+    validateCrisisData(d.crisis ?? emptyCrisisData(), d.day, new Set(d.facilities.map((f) => f.id)), new Set(city.graph.edges.keys()));
     if (d.roadDamage !== undefined && (!Array.isArray(d.roadDamage) || (d.roadDamage.length > 0 && !d.disastersEnabled))) throw new Error("道路の被害データが不正です");
     for (const item of d.roadDamage ?? []) {
       if (!Array.isArray(item) || item.length !== 2 || !isInt(item[0], 1) || !isInt(item[1], 0, 1e12) || city.roadDamage.has(item[0]) || !city.graph.edges.has(item[0])) throw new Error("道路の被害データが不正です");
@@ -484,6 +519,11 @@ export class City {
     city.outage = d.outage ? { ...d.outage } : null;
     city.flood = d.flood ? { ...d.flood } : null;
     city.quake = d.quake ? { ...d.quake } : null;
+    city.crisis = {
+      evacuation: d.crisis?.evacuation ? { ...d.crisis.evacuation } : null,
+      relief: d.crisis?.relief ? { ...d.crisis.relief } : null,
+      priorities: d.crisis?.priorities?.map((entry) => ({ ...entry })) ?? [],
+    };
     city.setTaxRate(d.taxRate);
     city.lastMonth = { income: Number(d.lastMonth?.income) || 0, expense: Number(d.lastMonth?.expense) || 0 };
     if (d.people !== undefined) {
@@ -886,6 +926,7 @@ export class City {
     if (!this.facilities.delete(id)) return false;
     if (this.outage?.facilityId === id) this.outage = null;
     this.facilityDamage.delete(id);
+    this.crisis.priorities = (this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "facility" && entry.id === id));
     this.facilitiesVersion++;
     return true;
   }
@@ -894,7 +935,10 @@ export class City {
   syncRoads(): void {
     if (this.graph.version === this.checkedRoadVersion) return;
     this.checkedRoadVersion = this.graph.version;
-    for (const id of this.roadDamage.keys()) if (!this.graph.edges.has(id)) this.roadDamage.delete(id);
+    for (const id of this.roadDamage.keys()) if (!this.graph.edges.has(id)) {
+      this.roadDamage.delete(id);
+      this.crisis.priorities = (this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "road" && entry.id === id));
+    }
     for (const f of [...this.facilities.values()]) {
       const underRoad = footprint(f.x, f.y, f.size).some((t) => this.graph.distanceToRoad(t.x + 0.5, t.y + 0.5, ROAD_CLEARANCE) < ROAD_CLEARANCE);
       if (underRoad) this.removeFacility(f.id);
@@ -1401,6 +1445,157 @@ export class City {
     }
   }
 
+  /** 現在進行中の災害を、危機管理画面向けの共通形式で返す。 */
+  private crisisEvent(): { kind: CrisisKind; x: number; y: number; started: number; radius: number } | null {
+    if (this.quake) return { kind: "quake", ...this.quake, radius: QUAKE_RADIUS };
+    if (this.flood) return { kind: "flood", ...this.flood, radius: FLOOD_RADIUS };
+    if (this.fire) return { kind: "fire", ...this.fire, radius: 3 };
+    if (this.outage) {
+      const f = this.facilities.get(this.outage.facilityId);
+      if (f) return { kind: "outage", x: f.x, y: f.y, started: this.outage.started, radius: 0 };
+    }
+    return null;
+  }
+
+  /** 古いセーブや、M11 の自動発生から入った災害にも M23 の状態を用意する。 */
+  private ensureCrisisState(): void {
+    const event = this.crisisEvent();
+    if (!event) return;
+    if (!this.crisis.relief || this.crisis.relief.kind !== event.kind) this.crisis.relief = { kind: event.kind, delivered: 0 };
+    if (this.crisis.evacuation && (this.crisis.evacuation.kind !== event.kind || this.crisis.evacuation.started !== event.started)) this.crisis.evacuation = null;
+  }
+
+  private beginCrisis(kind: CrisisKind): void {
+    const current = this.crisis.relief;
+    if (!current || current.kind !== kind) this.crisis.relief = { kind, delivered: 0 };
+    this.crisis.evacuation = null;
+  }
+
+  private crisisAffected(event: { kind: CrisisKind; x: number; y: number; radius: number }): { residents: number; assets: number; shelterCapacity: number } {
+    let residents = 0;
+    let assets = 0;
+    const affectedNet = event.kind === "outage" && this.outage ? this.facilityNet.get(this.outage.facilityId) ?? 0 : 0;
+    for (const c of this.zones.cells.values()) {
+      if (c.building === 0 || c.part !== undefined) continue;
+      const inArea = event.kind === "outage" ? affectedNet > 0 && c.net === affectedNet : Math.hypot(lotCenter(c).x - event.x, lotCenter(c).y - event.y) <= event.radius;
+      if (!inArea) continue;
+      residents += c.residents;
+      assets++;
+    }
+    for (const f of this.facilities.values()) {
+      const inArea = event.kind === "outage" ? this.outage?.facilityId === f.id : Math.hypot(facilityCenter(f).x - event.x, facilityCenter(f).y - event.y) <= event.radius;
+      if (inArea || !this.facilityActive(f)) assets++;
+    }
+    assets += this.facilityDamage.size + this.roadDamage.size;
+    let shelterCapacity = 0;
+    const shelterTypes = new Map<FacilityKind, number>([
+      [FacilityKind.Hospital, 80],
+      [FacilityKind.Police, 20],
+      [FacilityKind.Fire, 20],
+      [FacilityKind.School, 50],
+      [FacilityKind.MiddleSchool, 70],
+      [FacilityKind.HighSchool, 90],
+      [FacilityKind.University, 140],
+    ]);
+    for (const f of this.facilities.values()) {
+      const perTile = shelterTypes.get(f.type);
+      if (perTile === undefined || !this.facilityActive(f)) continue;
+      const distance = Math.hypot(facilityCenter(f).x - event.x, facilityCenter(f).y - event.y);
+      if (event.kind !== "outage" && distance > event.radius + 18) continue;
+      shelterCapacity += f.size * f.size * perTile;
+    }
+    return { residents, assets, shelterCapacity };
+  }
+
+  private crisisCoordination(event: { kind: CrisisKind; x: number; y: number; radius: number }): CoordinationStatus {
+    const nearby = (type: FacilityKind, extra = 18) => [...this.facilities.values()].some((f) => f.type === type && this.facilityActive(f) && (event.kind === "outage" || Math.hypot(facilityCenter(f).x - event.x, facilityCenter(f).y - event.y) <= event.radius + extra));
+    let fire = nearby(FacilityKind.Fire, 8);
+    if (event.kind === "fire") {
+      const cell = this.zones.get(Math.round(event.x), Math.round(event.y));
+      fire = !!cell && this.fireDispatch(cell) !== null;
+    }
+    return coordinationScore({ fire, police: nearby(FacilityKind.Police), hospital: nearby(FacilityKind.Hospital) });
+  }
+
+  /** M23 の災害対策条例が現在の危機管理に与える効果。 */
+  disasterPolicyEffect(): CrisisPolicyEffect {
+    return crisisPolicyEffect(this.disasterPreparedness);
+  }
+
+  /** 避難・連携・物資・被災規模をまとめて返す。導出値なので保存しない。 */
+  crisisStatus(): {
+    kind: CrisisKind | null;
+    started: number | null;
+    evacuation: EvacuationStats;
+    relief: ReliefStats;
+    coordination: CoordinationStatus;
+    priorities: RecoveryPriorityEntry[];
+  } {
+    this.ensureCrisisState();
+    const event = this.crisisEvent();
+    const emptyEvacuation: EvacuationStats = { affectedResidents: 0, shelterCapacity: 0, evacuatedResidents: 0, unaccommodatedResidents: 0 };
+    const emptyRelief: ReliefStats = { required: 0, delivered: this.crisis.relief?.delivered ?? 0, coverage: 0 };
+    if (!event) return { kind: null, started: null, evacuation: emptyEvacuation, relief: emptyRelief, coordination: coordinationScore({ fire: false, police: false, hospital: false }), priorities: [...(this.crisis.priorities ?? [])] };
+    const affected = this.crisisAffected(event);
+    const evacuation = evacuationStats(affected.residents, affected.shelterCapacity, this.crisis.evacuation?.ordered === true, this.disasterPolicyEffect());
+    const relief = reliefStats(event.kind, affected.residents, affected.assets, this.crisis.relief?.delivered ?? 0, this.disasterPolicyEffect());
+    return { kind: event.kind, started: event.started, evacuation, relief, coordination: this.crisisCoordination(event), priorities: [...(this.crisis.priorities ?? [])] };
+  }
+
+  /** 避難指示を出す。住民を消去せず、避難できた人数を危機管理の指標として扱う。 */
+  orderEvacuation(): boolean {
+    const event = this.crisisEvent();
+    if (!event || !this.disastersEnabled || this.devMode) return false;
+    this.crisis.evacuation = { kind: event.kind, x: event.x, y: event.y, started: event.started, ordered: true };
+    return true;
+  }
+
+  cancelEvacuation(): boolean {
+    if (!this.crisis.evacuation) return false;
+    this.crisis.evacuation = null;
+    return true;
+  }
+
+  /** 救援物資を1単位20人ぶん、10万円で投入する。 */
+  deliverReliefSupplies(units = 1): boolean {
+    const event = this.crisisEvent();
+    if (!event || !Number.isInteger(units) || units < 1 || units > 10_000 || !this.canAfford(units * 100_000)) return false;
+    this.ensureCrisisState();
+    this.spend(units * 100_000);
+    this.crisis.relief = { kind: event.kind, delivered: (this.crisis.relief?.delivered ?? 0) + units };
+    return true;
+  }
+
+  /** 被災した施設・道路の復旧優先度を設定し、現在の自動復旧予定にも反映する。 */
+  setRecoveryPriority(target: { kind: "facility" | "road"; id: number }, priority: RecoveryPriority): boolean {
+    const exists = target.kind === "facility" ? this.facilities.has(target.id) && this.facilityDamage.has(target.id) : this.graph.edges.has(target.id) && this.roadDamage.has(target.id);
+    if (!exists) return false;
+    const entries = [...(this.crisis.priorities ?? [])].filter((entry) => !(entry.kind === target.kind && entry.id === target.id));
+    entries.push({ ...target, priority });
+    this.crisis.priorities = entries;
+    if (target.kind === "facility") {
+      const base = this.disasterPreparedness ? 6 : 10;
+      this.facilityDamage.set(target.id, Math.min(this.facilityDamage.get(target.id)!, this.day + recoveryDaysFor(priority, base)));
+      this.facilitiesVersion++;
+    } else {
+      const base = this.disasterPreparedness ? 5 : 8;
+      this.roadDamage.set(target.id, Math.min(this.roadDamage.get(target.id)!, this.day + recoveryDaysFor(priority, base)));
+    }
+    return true;
+  }
+
+  recoveryPriorityOf(target: { kind: "facility" | "road"; id: number }): RecoveryPriority {
+    return recoveryPriorityOf(this.crisis.priorities ?? [], target);
+  }
+
+  recoveryQueue(): RecoveryPriorityEntry[] {
+    const damaged: RecoveryPriorityEntry[] = [];
+    for (const id of this.facilityDamage.keys()) damaged.push({ kind: "facility", id, priority: this.recoveryPriorityOf({ kind: "facility", id }) });
+    for (const id of this.roadDamage.keys()) damaged.push({ kind: "road", id, priority: this.recoveryPriorityOf({ kind: "road", id }) });
+    const order: Record<RecoveryPriority, number> = { critical: 0, high: 1, normal: 2 };
+    return damaged.sort((a, b) => order[a.priority] - order[b.priority] || a.kind.localeCompare(b.kind) || a.id - b.id);
+  }
+
   isQuakeArea(x: number, y: number): boolean {
     return !this.devMode && !!this.quake && Math.hypot(x - this.quake.x, y - this.quake.y) <= QUAKE_RADIUS;
   }
@@ -1417,6 +1612,7 @@ export class City {
     if (!this.facilities.has(id) || !this.facilityDamage.has(id) || !this.canAfford(2_000_000)) return false;
     this.spend(2_000_000);
     this.facilityDamage.delete(id);
+    this.crisis.priorities = (this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "facility" && entry.id === id));
     this.facilitiesVersion++;
     this.refresh();
     return true;
@@ -1425,7 +1621,11 @@ export class City {
   private updateFacilityDamage(): void {
     let changed = false;
     for (const [id, until] of this.facilityDamage) {
-      if (this.day >= until || !this.facilities.has(id)) { this.facilityDamage.delete(id); changed = true; }
+      if (this.day >= until || !this.facilities.has(id)) {
+        this.facilityDamage.delete(id);
+        this.crisis.priorities = (this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "facility" && entry.id === id));
+        changed = true;
+      }
     }
     if (changed) { this.facilitiesVersion++; this.refresh(); }
   }
@@ -1435,6 +1635,7 @@ export class City {
     if (!this.graph.edges.has(id) || !this.roadDamage.has(id) || !this.canAfford(1_000_000)) return false;
     this.spend(1_000_000);
     this.roadDamage.delete(id);
+    this.crisis.priorities = (this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "road" && entry.id === id));
     this.refresh();
     return true;
   }
@@ -1442,7 +1643,11 @@ export class City {
   private updateRoadDamage(): void {
     let changed = false;
     for (const [id, until] of this.roadDamage) {
-      if (this.day >= until || !this.graph.edges.has(id)) { this.roadDamage.delete(id); changed = true; }
+      if (this.day >= until || !this.graph.edges.has(id)) {
+        this.roadDamage.delete(id);
+        this.crisis.priorities = (this.crisis.priorities ?? []).filter((entry) => !(entry.kind === "road" && entry.id === id));
+        changed = true;
+      }
     }
     if (changed) this.refresh();
   }
@@ -1484,6 +1689,7 @@ export class City {
     if (!buildings.length) return;
     const c = buildings[Math.floor(hash2(this.seed ^ 0x19b8a71, this.day, 1) * buildings.length)]!;
     this.quake = { x: c.x, y: c.y, started: this.day };
+    this.beginCrisis("quake");
   }
 
   /** 洪水の間、範囲内の施設と建物は稼働できない。 */
@@ -1522,6 +1728,7 @@ export class City {
     if (!candidates.length) return;
     const c = candidates[Math.floor(hash2(this.seed ^ 0x6d98a32, this.day, 1) * candidates.length)]!;
     this.flood = { x: c.x, y: c.y, started: this.day };
+    this.beginCrisis("flood");
     this.refresh();
   }
 
@@ -1549,6 +1756,7 @@ export class City {
     if (!plants.length) return;
     const f = plants[Math.floor(hash2(this.seed ^ 0x7b47a19, this.day, 1) * plants.length)]!;
     this.outage = { facilityId: f.id, started: this.day };
+    this.beginCrisis("outage");
     this.refresh();
   }
 
@@ -1602,6 +1810,7 @@ export class City {
     if (buildings.length === 0) return;
     const c = buildings[Math.floor(hash2(this.seed ^ 0x4a2f113, this.day, 1) * buildings.length)]!;
     this.fire = { x: c.x, y: c.y, started: this.day };
+    this.beginCrisis("fire");
   }
 
   /** 個人生活の現在値。市の会計を変更せず、表示時に最新の政策・施設を反映する。 */
