@@ -8,3 +8,39 @@ export function industryFlow(output: number, connected: boolean): { shipped: num
   const shipped = connected ? Math.max(0, Math.round(output)) : 0;
   return { shipped, processed: Math.round(shipped * 0.65) };
 }
+
+/**
+ * M21 の物流で扱う品目。raw は一次産業の原料、product は工場で加工した製品。
+ * 農林水産業の「水産」は、現在の一次産業の種類を増やさず、農産物の一部として扱う。
+ */
+export type RawMaterial = "farmOutput" | "timber" | "ore" | "crudeOil";
+export type Product = "food" | "lumber" | "metal" | "fuel";
+export type Commodity = RawMaterial | Product;
+
+export const PRIMARY_MATERIAL: Record<PrimaryIndustryType, RawMaterial> = {
+  farm: "farmOutput",
+  forestry: "timber",
+  mine: "ore",
+  oil: "crudeOil",
+};
+
+export const PRODUCT_NAMES: Record<Product, string> = {
+  food: "食品",
+  lumber: "木材製品",
+  metal: "金属製品",
+  fuel: "燃料",
+};
+
+export const RAW_MATERIAL_NAMES: Record<RawMaterial, string> = {
+  farmOutput: "農林水産原料",
+  timber: "木材原料",
+  ore: "鉱石原料",
+  crudeOil: "原油",
+};
+
+export const PRODUCT_RECIPE: Record<Product, { input: RawMaterial; inputPerProduct: number }> = {
+  food: { input: "farmOutput", inputPerProduct: 2 },
+  lumber: { input: "timber", inputPerProduct: 2 },
+  metal: { input: "ore", inputPerProduct: 2 },
+  fuel: { input: "crudeOil", inputPerProduct: 2 },
+};

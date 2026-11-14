@@ -41,9 +41,10 @@ import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 import { EDUCATION_NAMES } from "./sim/people";
 import type { MapSize } from "./sim/mapSize";
+import { PRODUCT_NAMES, RAW_MATERIAL_NAMES, type Product, type RawMaterial } from "./sim/primaryIndustry";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.50";
+const VERSION = "0.96.0";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -1156,7 +1157,15 @@ async function main() {
     const r = g.city.resourceStats();
     $("menu-resources").textContent = `所有区画 ${g.city.ownedLand.size} / 農地 ${r.farmland}・森林 ${r.forest}・鉱石 ${r.ore}・石油 ${r.oil}`;
     const industry = g.city.industryStats();
-    $("menu-industry").textContent = `一次産業 ${industry.count} / 生産 ${industry.output} / 搬出 ${industry.shipped} / 加工 ${industry.processed} / ${industry.names || "なし"}`;
+    const logistics = industry.logistics;
+    $("menu-industry").textContent = `産業 ${logistics.enterprises.total}社（一次 ${industry.count} / 加工 ${logistics.enterprises.manufacturing} / 商業 ${logistics.enterprises.commercial}） / 雇用 ${logistics.employment.total} / 収支 ${yen(logistics.balance)} / ${industry.names || "なし"}`;
+    const rawKinds: RawMaterial[] = ["farmOutput", "timber", "ore", "crudeOil"];
+    const productKinds: Product[] = ["food", "lumber", "metal", "fuel"];
+    const raw = rawKinds.map((kind) => `${RAW_MATERIAL_NAMES[kind]}:${logistics.flows[kind].produced}`).join("・");
+    const products = productKinds.map((kind) => `${PRODUCT_NAMES[kind]}:${logistics.flows[kind].produced}`).join("・");
+    const imported = productKinds.reduce((sum, kind) => sum + logistics.flows[kind].imported, 0);
+    const exported = [...rawKinds, ...productKinds].reduce((sum, kind) => sum + logistics.flows[kind].exported, 0);
+    $("menu-industry-detail").textContent = `原料 ${raw}\n製品 ${products}\n倉庫 ${logistics.warehouse.used}/${logistics.warehouse.capacity}（${Math.round(logistics.warehouse.utilization * 100)}%） / 配送 ${logistics.deliveries} / 消費 ${logistics.consumption} / 輸入 ${imported} / 輸出 ${exported}${logistics.shortage > 0 ? ` / 不足 ${logistics.shortage}` : ""}`;
     ($("land-buy") as HTMLButtonElement).disabled = !g.city.canAfford(10_000_000);
     const hasMoney = g.city.canAfford(300_000);
     for (const id of ["terrain-level", "terrain-water", "terrain-forest"]) ($<HTMLButtonElement>(id)).disabled = !hasMoney;
