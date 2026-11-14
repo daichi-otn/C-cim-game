@@ -39,10 +39,11 @@ import { TUTORIAL_DONE_KEY, Tutorial } from "./sim/tutorial";
 import { DENSITY_CAPACITY, DENSITY_MIN_ROAD_CAPACITY, ZONE_NAMES, ZoneType, densitiesOf, normalizeRect, type Density } from "./sim/zoning";
 import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
+import { EDUCATION_NAMES } from "./sim/people";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.48";
+const VERSION = "0.95.49";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -1104,13 +1105,22 @@ async function main() {
       box.appendChild(row);
     }
     const citizenBox = $("menu-citizens");
+    const city = g.city;
+    const stateKey = JSON.stringify([yen(1234567), city.day, city.zones.version, city.graph.version, city.facilitiesVersion, city.networkVersion, city.trafficVersion, city.districtsVersion, city.devMode, city.happiness, city.taxRate, city.welfarePolicy, city.educationPolicy, city.medicalPolicy, city.trafficPolicy, city.people.slice(0, 8)]);
+    if (citizenBox.dataset.state === stateKey) return;
+    citizenBox.dataset.state = stateKey;
+    const samples = g.city.people.slice(0, 8).map((p) => ({ p, life: g!.city.personLife(p) }));
+    const sampleKey = JSON.stringify([yen(1234567), samples]);
+    if (citizenBox.dataset.samples === sampleKey) return;
+    citizenBox.dataset.samples = sampleKey;
     citizenBox.textContent = "";
     if (!g.city.people.length) { citizenBox.textContent = "住民サンプル: まだいません"; return; }
     const label = document.createElement("div"); label.textContent = "住民サンプル（押すと自宅を追跡）"; citizenBox.append(label);
     const list = document.createElement("div"); list.className = "citizen-list"; citizenBox.append(list);
-    for (const p of g.city.people.slice(0, 8)) {
+    for (const { p, life } of samples) {
       const b = document.createElement("button"); b.className = "btn citizen";
-      b.textContent = `#${p.id} ${Math.floor(p.ageDays / 360)}歳`;
+      b.style.cssText = "white-space:pre-line;text-align:left;max-width:100%;line-height:1.6;overflow-wrap:anywhere";
+      b.textContent = `#${p.id} ${Math.floor(p.ageDays / 365)}歳・${life.occupation}\n月収 ${yen(life.income)} / 生活費 ${yen(life.livingCost)} / 差引 ${yen(life.balance)}\n教育 ${EDUCATION_NAMES[life.education]}${life.attendingSchool ? "（通学中）" : ""} / 健康 ${life.health}\n通勤（片道目安） ${life.commuteMinutes === null ? "道路網未接続" : `${life.commuteMinutes}分`} / 買い物 ${life.shopping}\n満足度 ${Math.round(life.satisfaction * 100)}%`;
       b.title = `自宅 (${p.home[0]},${p.home[1]})${p.work ? `・職場 (${p.work[0]},${p.work[1]})` : "・無職"}`;
       b.addEventListener("click", () => { camera.x = (p.home[0] + 0.5) * TILE_PX; camera.y = (p.home[1] + 0.5) * TILE_PX; showToast(`住民 #${p.id} の自宅を表示しました`); });
       list.append(b);
