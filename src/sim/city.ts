@@ -112,6 +112,16 @@ export interface HistoryPoint {
   risk: number;
 }
 
+export interface PolicyHistoryPoint {
+  day: number;
+  taxRate: number;
+  welfare: boolean;
+  disaster: boolean;
+  education: number;
+  medical: number;
+  traffic: number;
+}
+
 /** 街の保存用データ。 */
 export interface CityData {
   seed: number;
@@ -159,6 +169,7 @@ export interface CityData {
   mapSize?: MapSize;
   industries?: PrimaryIndustry[];
   history?: HistoryPoint[];
+  policyHistory?: PolicyHistoryPoint[];
   parkingLots?: ParkingLot[];
   terrainEdits?: TerrainEdit[];
 }
@@ -290,6 +301,7 @@ export class City {
   readonly industries: PrimaryIndustry[] = [];
   private nextIndustryId = 1;
   readonly history: HistoryPoint[] = [];
+  readonly policyHistory: PolicyHistoryPoint[] = [];
   readonly parkingLots: ParkingLot[] = [];
   private nextParkingId = 1;
   readonly terrainEdits: TerrainEdit[] = [];
@@ -363,6 +375,7 @@ export class City {
       ownedLand: [...this.ownedLand].map((key) => key.split(",").map(Number) as [number, number]),
       industries: this.industries.map((industry) => ({ ...industry })),
       history: this.history.map((point) => ({ ...point })),
+      policyHistory: this.policyHistory.map((point) => ({ ...point })),
       parkingLots: this.parkingLots.map((lot) => ({ ...lot })),
       terrainEdits: this.terrainEdits.map((edit) => ({ ...edit })),
       mapSize: this.mapSize,
@@ -436,6 +449,11 @@ export class City {
       city.history.push({ ...point });
     }
     if (city.history.length > 24) city.history.splice(0, city.history.length - 24);
+    for (const point of d.policyHistory ?? []) {
+      if (!Number.isInteger(point.day) || point.day < 0 || !Number.isFinite(point.taxRate) || point.taxRate < MIN_TAX_RATE || point.taxRate > MAX_TAX_RATE || typeof point.welfare !== "boolean" || typeof point.disaster !== "boolean" || ![point.education, point.medical, point.traffic].every((v) => Number.isInteger(v) && v >= 0 && v <= 2)) throw new Error("政策履歴のデータが不正です");
+      city.policyHistory.push({ ...point });
+    }
+    if (city.policyHistory.length > 24) city.policyHistory.splice(0, city.policyHistory.length - 24);
     for (const lot of d.parkingLots ?? []) {
       if (!Number.isInteger(lot.id) || lot.id < 1 || !Number.isInteger(lot.x) || !Number.isInteger(lot.y) || !Number.isInteger(lot.capacity) || lot.capacity < 1 || !Number.isInteger(lot.used) || lot.used < 0 || lot.used > lot.capacity) throw new Error("駐車場のデータが不正です");
       city.parkingLots.push({ ...lot });
@@ -506,6 +524,15 @@ export class City {
     city.zones.version++;
     city.facilitiesVersion++;
     return city;
+  }
+
+  /** 政策変更を履歴に追加する。直前と同じ設定は重複して記録しない。 */
+  recordPolicyChange(): void {
+    const point: PolicyHistoryPoint = { day: this.day, taxRate: this.taxRate, welfare: this.welfarePolicy, disaster: this.disasterPreparedness, education: this.educationPolicy, medical: this.medicalPolicy, traffic: this.trafficPolicy };
+    const last = this.policyHistory.at(-1);
+    if (last && last.taxRate === point.taxRate && last.welfare === point.welfare && last.disaster === point.disaster && last.education === point.education && last.medical === point.medical && last.traffic === point.traffic) return;
+    this.policyHistory.push(point);
+    if (this.policyHistory.length > 24) this.policyHistory.shift();
   }
 
   /** 周囲の16×16タイル区画を1つ購入する。建物の既存動作は所有地制限を受けない。 */

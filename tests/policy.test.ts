@@ -56,4 +56,16 @@ describe("暮らしの支援条例", () => {
     expect(loaded.trafficPolicy).toBe(2);
     expect(() => City.fromData({ ...city.toData(), educationPolicy: 3 })).toThrow();
   });
+
+  it("政策変更履歴を保存・復元する", () => {
+    const city = new City(1);
+    city.recordPolicyChange();
+    city.educationPolicy = 1;
+    city.recordPolicyChange();
+    city.medicalPolicy = 2;
+    city.recordPolicyChange();
+    expect(city.policyHistory).toHaveLength(3);
+    const loaded = City.fromData(city.toData());
+    expect(loaded.policyHistory.map((p) => [p.education, p.medical])).toEqual([[0, 0], [1, 0], [1, 2]]);
+  });
 });

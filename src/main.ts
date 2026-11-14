@@ -42,7 +42,7 @@ import { intersectionStats } from "./sim/signals";
 import type { MapSize } from "./sim/mapSize";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.46";
+const VERSION = "0.95.47";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -901,9 +901,14 @@ async function main() {
       `交通 ${levelName(city.trafficPolicy)}  月${yen(traffic)}  効果: 渋滞の需要影響 -${city.trafficPolicy === 2 ? 30 : city.trafficPolicy === 1 ? 15 : 0}%`,
       `暮らし ${city.welfarePolicy ? "有効" : "なし"}  月${yen(welfare)} / 防災 ${city.disasterPreparedness ? "有効" : "なし"}  月${yen(disaster)}`,
       `政策合計 月${yen(total)}  負担目安 ${bar(total, maxCost)} ${Math.round((total / maxCost) * 100)}%`,
+      `指標 健康リスク ${Math.round(city.health.meanRisk * 100)}% / 教育カバー ${Math.round((city.coverage.education.covered / Math.max(1, city.coverage.education.total)) * 100)}% / 渋滞 ${Math.round(city.traffic.avgCongestion * 100)}%`,
       city.lastBudget ? `前回決算の政策費 ${yen(city.lastBudget.welfare + city.lastBudget.disasterPreparedness + city.lastBudget.education + city.lastBudget.medical + city.lastBudget.traffic)}` : "前回決算: まだありません",
     ];
     $("menu-policy-report").textContent = lines.join("\n");
+    const history = city.policyHistory.slice(-8);
+    $("menu-policy-history").textContent = history.length === 0
+      ? "変更履歴: まだありません"
+      : `変更履歴（${history.length}件）\n${history.map((p) => `第${Math.floor(p.day / 360) + 1}年${Math.floor((p.day % 360) / 30) + 1}月: 税${Math.round(p.taxRate * 100)}% / 教育${levelName(p.education)} / 医療${levelName(p.medical)} / 交通${levelName(p.traffic)} / 暮らし${p.welfare ? "有" : "無"} / 防災${p.disaster ? "有" : "無"}`).join("\n")}`;
   }
 
   const mapsEl = $("maps");
@@ -1206,12 +1211,14 @@ async function main() {
   $("policy-welfare").addEventListener("change", (event) => {
     if (!g) return;
     g.city.welfarePolicy = (event.target as HTMLInputElement).checked;
+    g.city.recordPolicyChange();
     g.city.refresh();
     updatePolicyMenu();
   });
   $("policy-disaster").addEventListener("change", (event) => {
     if (!g) return;
     g.city.disasterPreparedness = (event.target as HTMLInputElement).checked;
+    g.city.recordPolicyChange();
     g.city.refresh();
     updatePolicyMenu();
   });
@@ -1219,6 +1226,7 @@ async function main() {
     $(id).addEventListener("change", (event) => {
       if (!g) return;
       g.city[key] = Math.max(0, Math.min(2, Number((event.target as HTMLSelectElement).value))) as 0 | 1 | 2;
+      g.city.recordPolicyChange();
       g.city.refresh();
       updatePolicyMenu();
       reportMenu("政策を変更しました。効果と費用は次の更新・月次決算に反映されます。");
@@ -1227,11 +1235,13 @@ async function main() {
   $("policy-tax-down").addEventListener("click", () => {
     if (!g) return;
     g.city.setTaxRate(g.city.taxRate - 0.01);
+    g.city.recordPolicyChange();
     updatePolicyMenu();
   });
   $("policy-tax-up").addEventListener("click", () => {
     if (!g) return;
     g.city.setTaxRate(g.city.taxRate + 0.01);
+    g.city.recordPolicyChange();
     updatePolicyMenu();
   });
   $("transit-add-bus").addEventListener("click", () => {
