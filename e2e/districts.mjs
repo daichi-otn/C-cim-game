@@ -20,7 +20,7 @@ await click(page, cx(9), cy(8));
 await page.waitForTimeout(250);
 const names = await page.$$eval("#districts .nm", (els) => els.map((e) => e.textContent));
 check("地区が 1 つできて、一覧に出る", names.length === 1, names.join(","));
-check("財布の額が出る", (await page.textContent("#districts .dist span:last-child")).includes("円"));
+check("財布の額が出る", (await page.textContent("#districts .dist span:last-child")).includes("￥"));
 
 // 作ったばかりの地区は、設定が開いている
 check("設定 (名前・税率・密度) が開く", (await page.$$("#districts .detail")).length === 1);

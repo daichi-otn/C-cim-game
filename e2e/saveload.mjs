@@ -31,11 +31,12 @@ check("Esc でメニューが閉じる", !(await visible("menu")));
 
 // 2. タイトル画面: マップ選択
 await startFromTitle();
-check("タイトル画面に 5 つのマップが並ぶ", (await page.locator(".map-card").count()) === 5);
+check("タイトル画面に 9 つのマップが並ぶ", (await page.locator(".map-card").count()) === 9);
 check("保存したスロットが「読込」できる", await page.evaluate(() => !document.getElementById("title-load-1").disabled));
 check("空きスロットは読込できない", await page.evaluate(() => document.getElementById("title-load-2").disabled));
 await page.click("#map-plains");
-await page.waitForTimeout(300);
+await page.click("#new-game-start");
+await page.waitForFunction(() => document.getElementById("title")?.classList.contains("hidden") && document.getElementById("hud")?.textContent.includes("seed="));
 check("マップを選ぶとそのシードで始まる (大平原 = 31337)", !(await visible("title")) && (await hudNum("seed")) === 31337, await hud());
 check("新しい街は道路も施設もない", (await hudNum("edges")) === 0 && (await hudNum("facilities")) === 0);
 
@@ -56,17 +57,20 @@ await page.click("#seed-start");
 check("シードが空だと案内が出て始まらない", (await visible("title")) && (await page.textContent("#title-msg")).includes("入力"));
 await page.fill("#seed-input", "777");
 await page.click("#seed-start");
-await page.waitForTimeout(300);
+await page.click("#new-game-start");
+await page.waitForFunction(() => document.getElementById("title")?.classList.contains("hidden") && document.getElementById("hud")?.textContent.includes("seed="));
 check("数字のシード (777) で始まる", (await hudNum("seed")) === 777, await hud());
 await startFromTitle();
 await page.fill("#seed-input", "さくら");
 await page.click("#seed-start");
-await page.waitForTimeout(300);
+await page.click("#new-game-start");
+await page.waitForFunction(() => document.getElementById("title")?.classList.contains("hidden") && document.getElementById("hud")?.textContent.includes("seed="));
 const s1 = await hudNum("seed");
 await startFromTitle();
 await page.fill("#seed-input", "さくら");
 await page.click("#seed-start");
-await page.waitForTimeout(300);
+await page.click("#new-game-start");
+await page.waitForFunction(() => document.getElementById("title")?.classList.contains("hidden") && document.getElementById("hud")?.textContent.includes("seed="));
 check("言葉のシードは毎回同じ値になる", s1 > 0 && s1 === (await hudNum("seed")), `seed=${s1}`);
 
 // 5. 壊れたセーブデータでも落ちない

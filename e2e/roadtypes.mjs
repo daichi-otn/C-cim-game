@@ -73,7 +73,7 @@ check("一方通行の道路も通常の建設費", m2 - (await money()) === 600
 await page.keyboard.press("z");
 check("もう一度 Z で解除", (await page.locator("#road-oneway.active").count()) === 0);
 
-// 曲線: C で切り替え、始点・制御点・終点の 3 クリックで敷く。撤去は一続きで消える
+// 曲線: C で切り替え、画面下のパレットに重ならない位置で始点・制御点・終点の 3 クリックで敷く。撤去は一続きで消える
 await page.keyboard.press("2");
 await page.click("#road-type-2");
 check("曲線ボタンがある", await page.isVisible("#road-curve"));
@@ -81,12 +81,12 @@ await page.keyboard.press("c");
 check("C で曲線になる", (await page.locator("#road-curve.active").count()) === 1);
 const m3 = await money();
 const edgesBefore = Number(/edges=(\d+)/.exec(await page.textContent("#hud"))[1]);
-await click(page, cx(-3), cy(ROW0 + 26));
-await click(page, cx(5), cy(ROW0 + 22)); // 制御点
-await page.mouse.move(cx(12), cy(ROW0 + 26));
+await click(page, cx(-3), cy(ROW0 + 20));
+await click(page, cx(5), cy(ROW0 + 19)); // 制御点
+await page.mouse.move(cx(12), cy(ROW0 + 20));
 await page.waitForTimeout(150);
 check("曲線の案内に「曲線」と出る", (await page.textContent("#tip")).includes("曲線"), await page.textContent("#tip"));
-await click(page, cx(12), cy(ROW0 + 26));
+await click(page, cx(12), cy(ROW0 + 20));
 await page.keyboard.press("Escape");
 await page.waitForTimeout(150);
 const edgesAfter = Number(/edges=(\d+)/.exec(await page.textContent("#hud"))[1]);
@@ -94,7 +94,7 @@ check("曲線は細かい区間に分かれて敷かれ、お金が引かれる"
 await page.screenshot({ path: `${out}-2-curve.png` });
 await page.keyboard.press("c");
 await page.keyboard.press("3"); // 撤去
-await click(page, cx(5), cy(ROW0 + 24));
+await click(page, cx(5), cy(ROW0 + 20));
 await page.waitForTimeout(150);
 const edgesGone = Number(/edges=(\d+)/.exec(await page.textContent("#hud"))[1]);
 check("撤去すると曲線は一続きで消える", edgesGone === edgesBefore, `edges ${edgesAfter} -> ${edgesGone}`);
@@ -108,7 +108,7 @@ const m6 = await money();
 await page.mouse.move(cx(2), cy(ROW0 + 2));
 await page.waitForTimeout(250);
 const upTip = await page.textContent("#tip");
-check("案内に、変える費用が出る", upTip.includes("に変える") && upTip.includes("円"), upTip);
+check("案内に、変える費用が出る", upTip.includes("に変える") && upTip.includes("￥"), upTip);
 await click(page, cx(2), cy(ROW0 + 2));
 await page.waitForTimeout(200);
 check("クリックだけで道路が変わり、差額が引かれる", m6 - (await money()) === (2000000 - 600000) * 12, `${m6 - (await money())}`);

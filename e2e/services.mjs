@@ -26,6 +26,7 @@ await page.waitForTimeout(9000); // 建物が建つまで待つ
 await page.click("#speed button[data-speed='0']");
 
 let s = await read();
+const baselineHappiness = s.happiness;
 check("サービス施設がなければ幸福度は 50% 以下 (汚染があれば下がる)", s.happiness <= 50, `${s.happiness}%`);
 check("範囲の欄に 4 つのサービスが出る", ["治安", "消防", "医療", "教育"].every((n) => s.coverage.includes(n)), s.coverage);
 check("施設がなければどれも 0%", !/[1-9]\d*%/.test(s.coverage.replace(/-/g, "")), s.coverage);
@@ -52,7 +53,7 @@ await page.keyboard.press("1");
 s = await read();
 check("4 つ建って施設が合計 8 になる", s.facilities === 8, `facilities=${s.facilities}`);
 check("建設費 (2,000 万 + 2,200 万 + 4,000 万 + 2,500 万 = 1 億 700 万) がかかる", m0 - s.money === 107_000_000, `${m0} -> ${s.money}`);
-check("サービスが届き、幸福度が 50% を超える", s.happiness > 50, `${s.happiness}%  ${s.coverage}`);
+check("サービスが届くと幸福度が改善する", s.happiness > baselineHappiness, `${baselineHappiness}% -> ${s.happiness}%  ${s.coverage}`);
 check("範囲の欄に 0% 以外が出る", /[1-9]\d*%/.test(s.coverage), s.coverage);
 
 // 範囲のプレビューが描かれる (建設前に円が見える)

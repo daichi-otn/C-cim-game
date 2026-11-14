@@ -80,25 +80,16 @@ s = await state();
 check("山へは敷設できない", s.edges === before.edges && s.nodes === before.nodes, JSON.stringify(s));
 await page.keyboard.press("Escape");
 
-// 道路ツールでもドラッグは地図の移動 (道路は増えない)
+// 道路ツールのドラッグは、始点から終点まで一度に道路を敷設する
 const b2 = await state();
-await page.mouse.move(600, 500);
+await page.mouse.move(350, 350);
 await page.mouse.down();
-await page.mouse.move(540, 470, { steps: 8 });
+await page.mouse.move(500, 350, { steps: 8 });
 await page.mouse.up();
 await page.waitForTimeout(150);
 s = await state();
-check("ドラッグで地図が動く", s.x !== b2.x || s.y !== b2.y, `pos ${b2.x},${b2.y} -> ${s.x},${s.y}`);
-check("ドラッグでは道路が増えない", s.edges === b2.edges && s.nodes === b2.nodes);
-
-// 地図を元に戻す (逆ドラッグ)
-await page.mouse.move(540, 470);
-await page.mouse.down();
-await page.mouse.move(600, 500, { steps: 8 });
-await page.mouse.up();
-await page.waitForTimeout(150);
-s = await state();
-check("元の位置に戻せる", s.x === b2.x && s.y === b2.y, `pos ${s.x},${s.y}`);
+check("ドラッグで道路を一度に敷設", s.edges > b2.edges && s.nodes >= b2.nodes, JSON.stringify(s));
+check("道路敷設ドラッグではカメラを動かさない", s.x === b2.x && s.y === b2.y, `pos ${b2.x},${b2.y} -> ${s.x},${s.y}`);
 
 // 撤去ツール (キー 3): 1本目の左側の区間を消す
 await page.keyboard.press("3");

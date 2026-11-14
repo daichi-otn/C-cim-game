@@ -6,7 +6,7 @@ const { check, finish } = makeChecker();
 await page.goto(start.split("?")[0]);
 await page.click("#map-plains");
 const size = page.locator("#new-game-map-size");
-check("マップサイズを選べる", await size.count() === 1 && await size.locator("option").count() === 3);
+check("マップサイズを選べる", await size.count() === 1 && await size.locator("option").count() === 4);
 await size.selectOption("small");
 await page.click("#new-game-start");
 await page.click("#menu-button");
