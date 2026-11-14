@@ -41,9 +41,10 @@ import { milestonesOf, nextGoalOf, statisticsOf } from "./sim/progress";
 import { intersectionStats } from "./sim/signals";
 import { EDUCATION_NAMES } from "./sim/people";
 import type { MapSize } from "./sim/mapSize";
+import { PRODUCT_NAMES, RAW_MATERIAL_NAMES, type Product, type RawMaterial } from "./sim/primaryIndustry";
 import { applyLocale, formatMoney, loadCurrency, loadLocale, loadUsdRate, LOCALES, setCurrency, setUsdRate, text, translateDom, type Currency, type Locale } from "./i18n";
 
-const VERSION = "0.95.50";
+const VERSION = "0.96.1";
 /** 速度 1x で、ゲーム内の 1 日が現実の何秒か。 */
 const DAY_SEC = 0.5;
 /** タブを切り替えて戻ったときなどに、一度に進めるゲーム内日数の上限。 */
@@ -162,6 +163,8 @@ async function main() {
     document.body.appendChild(note);
     return;
   }
+  world.canvas.setAttribute("role", "application");
+  world.canvas.setAttribute("aria-label", "街づくりの3D地図。マウスまたは指で視点を操作できます");
   const camera = world.view;
   let locale: Locale = loadLocale();
   activeLocale = locale;
@@ -181,7 +184,11 @@ async function main() {
   markBadge();
   new MutationObserver(markBadge).observe(document.body, { childList: true });
   // 情報パネル: 小さい画面では、畳んだり開いたりできる
-  $("panel-toggle").addEventListener("click", () => $("panel").classList.toggle("open"));
+  $("panel-toggle").addEventListener("click", () => {
+    const panel = $("panel");
+    const open = panel.classList.toggle("open");
+    $("panel-toggle").setAttribute("aria-expanded", String(open));
+  });
   // グラフィック設定: メニューで変えて、保存する。保存がなければ、描画が軽い環境では「低」から始める
   const loadGraphics = (): GraphicsLevels => {
     let raw: string | null = null;
@@ -478,7 +485,11 @@ async function main() {
   const speedButtons = [...document.querySelectorAll<HTMLButtonElement>("#speed button")];
   function setSpeed(next: Speed) {
     speed = next;
-    for (const b of speedButtons) b.classList.toggle("active", Number(b.dataset.speed) === next);
+    for (const b of speedButtons) {
+      const active = Number(b.dataset.speed) === next;
+      b.classList.toggle("active", active);
+      b.setAttribute("aria-pressed", String(active));
+    }
   }
   for (const b of speedButtons) b.addEventListener("click", () => setSpeed(Number(b.dataset.speed) as Speed));
 
@@ -1057,6 +1068,7 @@ async function main() {
     $("menu-language").textContent = text("language", locale);
     renderSlots($("menu-slots"), "menu", reportMenu);
     menuEl.classList.remove("hidden");
+    $("menu-button").setAttribute("aria-expanded", "true");
     menuSeen = true;
     refreshTranslatedText();
   }
@@ -1156,7 +1168,15 @@ async function main() {
     const r = g.city.resourceStats();
     $("menu-resources").textContent = `所有区画 ${g.city.ownedLand.size} / 農地 ${r.farmland}・森林 ${r.forest}・鉱石 ${r.ore}・石油 ${r.oil}`;
     const industry = g.city.industryStats();
-    $("menu-industry").textContent = `一次産業 ${industry.count} / 生産 ${industry.output} / 搬出 ${industry.shipped} / 加工 ${industry.processed} / ${industry.names || "なし"}`;
+    const logistics = industry.logistics;
+    $("menu-industry").textContent = `産業 ${logistics.enterprises.total}社（一次 ${industry.count} / 加工 ${logistics.enterprises.manufacturing} / 商業 ${logistics.enterprises.commercial}） / 雇用 ${logistics.employment.total} / 収支 ${yen(logistics.balance)} / ${industry.names || "なし"}`;
+    const rawKinds: RawMaterial[] = ["farmOutput", "timber", "ore", "crudeOil"];
+    const productKinds: Product[] = ["food", "lumber", "metal", "fuel"];
+    const raw = rawKinds.map((kind) => `${RAW_MATERIAL_NAMES[kind]}:${logistics.flows[kind].produced}`).join("・");
+    const products = productKinds.map((kind) => `${PRODUCT_NAMES[kind]}:${logistics.flows[kind].produced}`).join("・");
+    const imported = productKinds.reduce((sum, kind) => sum + logistics.flows[kind].imported, 0);
+    const exported = [...rawKinds, ...productKinds].reduce((sum, kind) => sum + logistics.flows[kind].exported, 0);
+    $("menu-industry-detail").textContent = `原料 ${raw}\n製品 ${products}\n倉庫 ${logistics.warehouse.used}/${logistics.warehouse.capacity}（${Math.round(logistics.warehouse.utilization * 100)}%） / 配送 ${logistics.deliveries} / 消費 ${logistics.consumption} / 輸入 ${imported} / 輸出 ${exported}${logistics.shortage > 0 ? ` / 不足 ${logistics.shortage}` : ""}`;
     ($("land-buy") as HTMLButtonElement).disabled = !g.city.canAfford(10_000_000);
     const hasMoney = g.city.canAfford(300_000);
     for (const id of ["terrain-level", "terrain-water", "terrain-forest"]) ($<HTMLButtonElement>(id)).disabled = !hasMoney;
@@ -1302,7 +1322,10 @@ async function main() {
       else reportMenu("対応する資源のある所有地か、500万円の資金が必要です", true);
     });
   }
-  const closeMenu = () => menuEl.classList.add("hidden");
+  const closeMenu = () => {
+    menuEl.classList.add("hidden");
+    $("menu-button").setAttribute("aria-expanded", "false");
+  };
   $("menu-button").addEventListener("click", () => (menuEl.classList.contains("hidden") ? openMenu() : closeMenu()));
   $("menu-close").addEventListener("click", closeMenu);
   $("menu-language").addEventListener("click", () => {
@@ -2321,7 +2344,7 @@ async function main() {
 
     const st = zones.stats();
     hud.textContent =
-      `C-cim v${VERSION}  tool=${tool}  zoom=${camera.zoom.toFixed(2)}  ` +
+      `C-cim v${VERSION}  day=${city.day}  tool=${tool}  zoom=${camera.zoom.toFixed(2)}  ` +
       `pos=(${Math.round(camera.x)}, ${Math.round(camera.y)})  chunks=${world.chunkCount}  ` +
       `roads: nodes=${graph.nodes.size} edges=${graph.edges.size}  ` +
       `zones: R=${st.R.zones} C=${st.C.zones} I=${st.I.zones}  ` +

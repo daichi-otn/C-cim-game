@@ -47,6 +47,7 @@ import { ROAD_CLEARANCE, ZONE_REACH, ZoneMap, ZoneType, DENSITY_MIN_ROAD_CAPACIT
 import { transitRidership, validateTransitData, type TransitData, type TransitLine, type TransitMode, type TransitStop } from "./transit";
 import { PARCEL_COST, PARCEL_SIZE, resourceSummary, type ResourceType } from "./resources";
 import { PRIMARY_NAMES, PRIMARY_RESOURCE, industryFlow, primaryOutput, type PrimaryIndustry, type PrimaryIndustryType } from "./primaryIndustry";
+import { simulateLogistics, type LogisticsStats } from "./logistics";
 import { PARKING_CAPACITY, PARKING_COST, parkingUsed, type ParkingLot } from "./parking";
 import { isInMap, type MapSize } from "./mapSize";
 
@@ -576,7 +577,7 @@ export class City {
     return false;
   }
 
-  industryStats(): { count: number; output: number; shipped: number; processed: number; names: string } {
+  industryStats(): { count: number; output: number; shipped: number; processed: number; names: string; logistics: LogisticsStats } {
     let output = 0; let shipped = 0; let processed = 0;
     for (const i of this.industries) {
       output += i.output;
@@ -584,7 +585,15 @@ export class City {
       const flow = industryFlow(i.output, edge !== null && this.isOutsideNode(edge.a));
       shipped += flow.shipped; processed += flow.processed;
     }
-    return { count: this.industries.length, output, shipped, processed, names: this.industries.map((i) => PRIMARY_NAMES[i.type]).join("・") };
+    const totals = this.zones.totals();
+    const logistics = simulateLogistics({
+      primary: this.industries,
+      industrialJobs: totals.jobsI,
+      commercialJobs: totals.jobsC,
+      population: totals.population,
+      outsideConnected: this.outsideNets.size > 0,
+    });
+    return { count: this.industries.length, output, shipped, processed, names: this.industries.map((i) => PRIMARY_NAMES[i.type]).join("・"), logistics };
   }
 
   /** 道路の両端から路線を作る。バスは道路上、鉄道・地下鉄は駅として同じ停留所モデルを使う。 */

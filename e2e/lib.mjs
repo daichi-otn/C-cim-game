@@ -5,7 +5,16 @@
 import { existsSync } from "node:fs";
 import { chromium } from "playwright-core";
 
-const EDGE_WINDOWS = "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe";
+const BROWSER_CANDIDATES = [
+  "C:/Program Files (x86)/Microsoft/Edge/Application/msedge.exe",
+  "C:/Program Files/Microsoft/Edge/Application/msedge.exe",
+  "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+  "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+  "/usr/bin/google-chrome",
+  "/usr/bin/google-chrome-stable",
+  "/usr/bin/chromium",
+  "/usr/bin/chromium-browser",
+];
 
 export const TILE = 16;
 export const PAN_X = 240;
@@ -16,7 +25,7 @@ export const cy = (ty) => py(ty) + TILE / 2;
 
 /** ブラウザの起動設定。環境変数 CCIM_BROWSER があればそれ、なければ Windows の Edge、それもなければ Playwright 同梱の Chromium。 */
 export function launchOptions() {
-  const exe = process.env.CCIM_BROWSER ?? (existsSync(EDGE_WINDOWS) ? EDGE_WINDOWS : undefined);
+  const exe = process.env.CCIM_BROWSER ?? BROWSER_CANDIDATES.find((candidate) => existsSync(candidate));
   // CCIM_GPU=1 で、このマシンの実際の GPU を使う (既定は GPU を使わないソフトウェア描画: 再現性のため、遅い)
   const gpu = process.env.CCIM_GPU === "1" && process.platform === "darwin"
     ? ["--use-gl=angle", "--use-angle=metal", "--enable-gpu", "--ignore-gpu-blocklist"]

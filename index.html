@@ -223,12 +223,12 @@
   </head>
   <body>
     <div id="hud"></div>
-    <div id="panel">
-      <button id="panel-toggle" type="button">情報 ▾</button>
+    <div id="panel" role="region" aria-label="街の情報">
+      <button id="panel-toggle" type="button" aria-controls="panel" aria-expanded="false">情報 ▾</button>
       <div class="row"><b id="date"></b><span class="sub"><span id="pause-key">Space</span>: 一時停止</span></div>
       <div class="row sub"><span data-i18n="weather">季節・天気</span><span id="weather"></span></div>
-      <div class="row"><span data-i18n="money">資金</span><b id="money"></b></div>
       <div class="row"><span data-i18n="population">人口</span><b id="pop"></b></div>
+      <div class="row"><span data-i18n="money">資金</span><b id="money"></b></div>
       <div class="row sub"><span>先月の収支</span><span id="balance"></span></div>
       <div class="row"><span>税率</span><span><button id="tax-down">−</button> <b id="tax"></b> <button id="tax-up">＋</button></span></div>
       <div class="row"><span style="color:#f2c230">電力</span><b id="util-power"></b></div>
@@ -247,7 +247,7 @@
       <div id="districts"></div>
       <div id="notices"></div>
       <div class="row" id="speed">
-        <button data-speed="0">⏸</button><button data-speed="1">1x</button><button data-speed="2">2x</button><button data-speed="4">4x</button>
+        <button type="button" data-speed="0" aria-label="一時停止" aria-pressed="false">⏸</button><button type="button" data-speed="1" aria-label="速度 1 倍" aria-pressed="false">1x</button><button type="button" data-speed="2" aria-label="速度 2 倍" aria-pressed="false">2x</button><button type="button" data-speed="4" aria-label="速度 4 倍" aria-pressed="false">4x</button>
       </div>
     </div>
     <div id="tip"></div>
@@ -263,13 +263,13 @@
         <button class="btn" id="tut-close">やめる</button>
       </div>
     </div>
-    <button id="menu-button">☰ メニュー<kbd style="opacity:.6;font-size:11px;margin-left:4px">M</kbd></button>
+    <button id="menu-button" type="button" aria-controls="menu" aria-expanded="false">☰ メニュー<kbd style="opacity:.6;font-size:11px;margin-left:4px">M</kbd></button>
     <div id="toast" class="hidden"></div>
-    <div id="title" class="overlay hidden">
+    <div id="title" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="title-heading" tabindex="-1">
       <canvas id="title-bg" aria-hidden="true"></canvas>
       <div class="sheet">
         <div class="hero">
-          <h1>C-cim</h1>
+          <h1 id="title-heading">C-cim</h1>
           <p class="tagline">何もない土地から、街をつくる。</p>
         </div>
         <div id="title-selection">
@@ -283,7 +283,7 @@
         <h2>シード値を指定する</h2>
         <p>数字や言葉を入れると、同じ入力からはいつも同じ地形になります。</p>
         <div class="custom">
-          <input id="seed-input" type="text" placeholder="例: 777 / さくら" maxlength="40" autocomplete="off" />
+          <input id="seed-input" type="text" placeholder="例: 777 / さくら" maxlength="40" autocomplete="off" aria-label="シード値" />
           <button id="seed-start" class="btn primary">このシードで始める</button>
           <button id="seed-random" class="btn">ランダムで始める</button>
         </div>
@@ -310,9 +310,9 @@
         <div class="row-end"><button id="title-close" class="btn hidden">ゲームに戻る</button></div>
       </div>
     </div>
-    <div id="menu" class="overlay hidden">
+    <div id="menu" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="menu-heading" tabindex="-1">
       <div class="sheet small">
-        <h2 style="margin-top:0" data-i18n="menu">メニュー</h2>
+        <h2 id="menu-heading" style="margin-top:0" data-i18n="menu">メニュー</h2>
         <p id="menu-map"></p>
         <div class="row-end" style="justify-content:flex-start;align-items:center">
           <button id="menu-language" class="btn" data-i18n="language">言語</button>
@@ -354,6 +354,7 @@
         <p id="menu-terrain" class="sub">整地・水路・植林は画面中央のタイルに適用します。</p>
         <div class="row-end" style="justify-content:flex-start"><button id="terrain-level" class="btn">整地（100万円）</button><button id="terrain-water" class="btn">水路（100万円）</button><button id="terrain-forest" class="btn">植林（30万円）</button></div>
         <p id="menu-industry" class="sub"></p>
+        <pre id="menu-industry-detail" class="sub" style="font:11px/1.35 monospace;white-space:pre-wrap;margin:4px 0"></pre>
         <button id="menu-japan-overview" class="btn hidden">日本全体の地形を見る</button>
         <div class="row-end" style="justify-content:flex-start"><button id="industry-farm" class="btn">農場</button><button id="industry-forestry" class="btn">林業</button><button id="industry-mine" class="btn">鉱山</button><button id="industry-oil" class="btn">油田</button></div>
         <h2 data-i18n="transit">公共交通</h2>
@@ -376,24 +377,24 @@
           <button id="menu-help" class="btn" data-i18n="help">使い方・操作キー</button>
           <button id="menu-tutorial" class="btn" data-i18n="tutorial">チュートリアル (新しい街で)</button>
           <button id="menu-sound" class="btn">音: あり</button>
-          <label style="display:flex;align-items:center;gap:6px;color:#d4dae2">音量 <input id="menu-volume" type="range" min="0" max="1" step="0.05" style="width:110px"><span id="menu-volume-value">80%</span></label>
+          <label style="display:flex;align-items:center;gap:6px;color:#d4dae2">音量 <input id="menu-volume" type="range" min="0" max="1" step="0.05" style="width:110px" aria-label="音量"><span id="menu-volume-value">80%</span></label>
           <button id="menu-alert-test" class="btn hidden">緊急速報のテスト (開発用)</button>
           <button id="menu-title" class="btn" data-i18n="titleBack">タイトルへ (マップ選択)</button>
           <button id="menu-close" class="btn primary" data-i18n="close">閉じる</button>
         </div>
       </div>
     </div>
-    <div id="japan-overview" class="overlay hidden">
+    <div id="japan-overview" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="japan-overview-heading" tabindex="-1">
       <div class="sheet">
-        <h2 style="color:#fff;margin-top:0">日本全体の地形</h2>
+        <h2 id="japan-overview-heading" style="color:#fff;margin-top:0">日本全体の地形</h2>
         <p>日本列島を低解像度で表示しています。地図をクリックすると、その地域の地形へ移動します。</p>
         <canvas id="japan-overview-canvas" width="640" height="640" aria-label="日本列島全体の地形図"></canvas>
         <div class="row-end"><button id="japan-overview-close" class="btn primary">街へ戻る</button></div>
       </div>
     </div>
-    <div id="help" class="overlay hidden">
+    <div id="help" class="overlay hidden" role="dialog" aria-modal="true" aria-labelledby="help-heading" tabindex="-1">
       <div class="sheet small help-sheet">
-        <h2 style="margin-top:0">使い方</h2>
+        <h2 id="help-heading" style="margin-top:0">使い方</h2>
         <div id="help-guide"></div>
         <h2>操作キー</h2>
         <p class="sub" style="margin-top:-4px">「変更」を押してから、新しいキーを押します。Esc で取り消し。すでに使われているキーを選ぶと、2 つの操作のキーが入れ替わります。</p>

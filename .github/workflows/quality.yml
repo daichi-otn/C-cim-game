@@ -1,0 +1,42 @@
+# M25 の統合品質検査。公開用 Pages のビルドは pages.yml、ここでは回帰検証を行う。
+name: Quality
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  unit-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run quality
+
+  browser:
+    needs: unit-and-build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run dev -- --host 127.0.0.1 > /tmp/c-cim-vite.log 2>&1 &
+      - run: node scripts/wait-for-server.mjs http://127.0.0.1:5173/
+      - run: npm run e2e:release -- http://127.0.0.1:5173/?seed=12345
+        env:
+          CI: true
